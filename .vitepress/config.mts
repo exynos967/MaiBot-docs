@@ -173,14 +173,12 @@ const routes = {
   maibotMain: '/develop/llm/maibot/main',
   maibotDev: '/develop/llm/maibot/dev',
   maimMessageMaster: '/develop/llm/maim_message/master',
-  maimMessageDev: '/develop/llm/maim_message/dev',
 } as const;
 
 const fsRoots = {
   maibotMain: path.join(llmDocsRoot, 'maibot', 'main'),
   maibotDev: path.join(llmDocsRoot, 'maibot', 'dev'),
   maimMessageMaster: path.join(llmDocsRoot, 'maim_message', 'master'),
-  maimMessageDev: path.join(llmDocsRoot, 'maim_message', 'dev'),
 } as const;
 
 // https://vitepress.dev/reference/site-config
@@ -205,7 +203,6 @@ export default defineConfig({
       { text: 'MaiBot（main）', link: `${routes.maibotMain}/` },
       { text: 'MaiBot（dev）', link: `${routes.maibotDev}/` },
       { text: 'maim_message（master）', link: `${routes.maimMessageMaster}/` },
-      { text: 'maim_message（dev）', link: `${routes.maimMessageDev}/` },
       {
         text: 'GitHub', 
         items: [
@@ -220,7 +217,6 @@ export default defineConfig({
       [`${routes.maibotMain}/`]: buildLlmSidebar(routes.maibotMain, fsRoots.maibotMain),
       [`${routes.maibotDev}/`]: buildLlmSidebar(routes.maibotDev, fsRoots.maibotDev),
       [`${routes.maimMessageMaster}/`]: buildLlmSidebar(routes.maimMessageMaster, fsRoots.maimMessageMaster),
-      [`${routes.maimMessageDev}/`]: buildLlmSidebar(routes.maimMessageDev, fsRoots.maimMessageDev),
     },
 
     socialLinks: [
