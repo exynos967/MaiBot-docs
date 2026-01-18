@@ -9,7 +9,6 @@
 - [消息](/develop/llm/maim_message/master/messages/)
 - [平台适配](/develop/llm/maim_message/master/platform_adapters/)
 - [插件系统](/develop/llm/maim_message/master/plugin_system/)
-- [部署与维护](/develop/llm/maim_message/master/deployment/)
 - [学习系统](/develop/llm/maim_message/master/learning_system/)
 - [存储与工具](/develop/llm/maim_message/master/storage_utils/)
 - [快照（按 Tag 归档）](/develop/llm/maim_message/master/snapshots/)

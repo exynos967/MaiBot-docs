@@ -28,7 +28,6 @@ class DocGenerator:
             "messages",
             "platform_adapters",
             "plugin_system",
-            "deployment",
             "learning_system",
             "storage_utils",
         ]

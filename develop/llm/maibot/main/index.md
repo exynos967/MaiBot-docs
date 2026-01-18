@@ -9,7 +9,6 @@
 - [消息](/develop/llm/maibot/main/messages/)
 - [平台适配](/develop/llm/maibot/main/platform_adapters/)
 - [插件系统](/develop/llm/maibot/main/plugin_system/)
-- [部署与维护](/develop/llm/maibot/main/deployment/)
 - [学习系统](/develop/llm/maibot/main/learning_system/)
 - [存储与工具](/develop/llm/maibot/main/storage_utils/)
 - [快照（按 Tag 归档）](/develop/llm/maibot/main/snapshots/)

@@ -17,7 +17,6 @@ const llmCategoryOrder = [
   'messages',
   'platform_adapters',
   'plugin_system',
-  'deployment',
   'learning_system',
   'storage_utils',
   // legacy fallback
@@ -30,7 +29,6 @@ const llmCategoryLabels: Record<string, string> = {
   messages: '消息',
   platform_adapters: '平台适配',
   plugin_system: '插件系统',
-  deployment: '部署与维护',
   learning_system: '学习系统',
   storage_utils: '存储与工具',
   chunks: 'Chunks（旧）',
