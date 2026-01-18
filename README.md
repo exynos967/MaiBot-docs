@@ -58,6 +58,11 @@ LLM 配置通过 GitHub Secrets/Vars 提供（不会写入仓库）：
 - `MODEL_NAME`
 - 可选：`LLM_API_STYLE`、`GEMINI_API_VERSION`、`SYNC_LOOKBACK_HOURS`
 
+首次建档（可选）：
+
+- 如果你希望先生成一批“初始基线文档”，可以在 Actions 页面手动触发工作流并勾选 `bootstrap=true`。
+  - `main` / `dev` 两条工作流分别执行，生成结果不会混在一起。
+
 ## 贡献
 
 ### 完整方式

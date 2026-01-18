@@ -3,7 +3,7 @@ import os
 import re
 import time
 from datetime import datetime
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from config import config
 from llm_client import HttpError, generate_text
@@ -113,14 +113,21 @@ class DocGenerator:
 
         raise RuntimeError("unreachable")
 
-    def _extract_json(self, text: str) -> Dict:
+    def _extract_json(self, text: str) -> Any:
         json_match = re.search(r"```json\s*(.*?)\s*```", text, re.DOTALL)
         if json_match:
             json_str = json_match.group(1)
         else:
-            start = text.find("{")
-            end = text.rfind("}")
-            json_str = text[start : end + 1] if (start != -1 and end != -1) else text
+            start_arr = text.find("[")
+            end_arr = text.rfind("]")
+            start_obj = text.find("{")
+            end_obj = text.rfind("}")
+            if start_arr != -1 and end_arr != -1 and (start_obj == -1 or start_arr < start_obj):
+                json_str = text[start_arr : end_arr + 1]
+            elif start_obj != -1 and end_obj != -1:
+                json_str = text[start_obj : end_obj + 1]
+            else:
+                json_str = text
         return json.loads(json_str)
 
     def _extract_changed_paths(self, diff: str) -> List[str]:
@@ -286,6 +293,123 @@ Diff Snippet:
 
         return None
 
+    def _validate_bootstrap_item(self, item: Dict, repo_context: str) -> Optional[str]:
+        file_name = (item.get("file_name") or "").strip()
+        if not file_name.endswith(".md"):
+            return "file_name must end with .md"
+        if file_name == "index.md":
+            return "file_name must not be index.md"
+        if any(x in file_name for x in ["/", "\\", ".."]):
+            return "file_name must be a plain filename (no path)"
+
+        target_category = (item.get("target_category") or "").strip()
+        if target_category and target_category not in self.categories:
+            return f"target_category must be one of: {', '.join(self.categories)}"
+
+        content = item.get("content")
+        if not isinstance(content, str) or not content.strip():
+            return "content must be a non-empty string"
+        if not content.lstrip().startswith("---"):
+            return "content must start with YAML frontmatter ('---')"
+
+        required_sections = ("## 概述", "## 适用范围", "## 变更影响分析")
+        for sec in required_sections:
+            if sec not in content:
+                return f"content must include section: {sec}"
+
+        evidence = item.get("evidence")
+        if not isinstance(evidence, list) or len(evidence) < 2:
+            return "evidence must be a list with at least 2 items"
+
+        matched = 0
+        for ev in evidence:
+            if not isinstance(ev, str):
+                continue
+            token = ev.strip().strip("`")
+            if token and token in repo_context:
+                matched += 1
+        if matched < 2:
+            return "evidence items must appear in provided repo context"
+
+        return None
+
+    def generate_bootstrap_docs(self, repo_context: str) -> List[Dict]:
+        """基于仓库结构与 README 的快照生成初始文档分块（用于首次建档/重建基线）。"""
+        base_context = self._get_base_context()
+        today = datetime.now().strftime("%Y-%m-%d")
+        categories_str = ", ".join(self.categories)
+
+        system_instruction = "你是一个只输出 JSON 的文档助手。禁止编造，不得输出非 JSON 内容。"
+        prompt = f"""
+你是一个高级软件工程师和技术文档专家。你的任务是为 MaiBot 生成**初始**开发文档分块（面向 AI/RAG 的 Functional Chunks）。
+
+注意：你只能基于下面提供的“仓库信息”与“现有文档”，输出**概括性、可验证**的文档。若缺少细节，请明确写“需要以源码验证/需要补充信息”，不要猜测接口。
+
+--- 可用分类 ---
+{categories_str}
+
+--- 仓库信息（快照） ---
+{repo_context}
+
+--- 现有文档（可能为空） ---
+{base_context}
+
+--- 输出要求 ---
+1) 只输出一个 JSON 数组（最多 4 项），每一项是一个对象，仅包含这些 key：
+   - target_category: 必须为 "chunks"
+   - file_name: 纯文件名，以 .md 结尾，禁止包含路径/..，且不能是 index.md
+   - content: Markdown，必须以 YAML frontmatter 开头，且至少包含以下章节：
+       - ## 概述
+       - ## 目录/结构（可用任意标题，但要清晰描述目录/模块）
+       - ## 适用范围与边界（标题中必须包含“适用范围”）
+       - ## 变更影响分析（初始建档也需要此章节）
+   - evidence: 字符串数组（至少 2 条），每条必须能在“仓库信息（快照）”中找到原样子串（建议使用路径/文件名/目录名/README 中的专有名词）
+   - reason: 1 句理由（为什么需要这几篇作为初始分块）
+2) frontmatter 字段必须包含：
+   ---
+   title: (简洁标题)
+   type: (feature | improvement | refactor)
+   status: (stable | experimental)
+   last_updated: {today}
+   related_base: (可为空)
+   ---
+3) 文档尽量短（每篇不超过 200 行），用于后续增量迭代完善。
+"""
+
+        created: List[Dict] = []
+        try:
+            raw_response = self._call_llm(prompt, system_instruction=system_instruction, temperature=0.2, max_tokens=4096)
+            result = self._extract_json(raw_response)
+            items = result if isinstance(result, list) else [result]
+
+            for item in items:
+                if not isinstance(item, dict):
+                    continue
+                validation_error = self._validate_bootstrap_item(item, repo_context)
+                if validation_error:
+                    print(f"Bootstrap AI output validation failed: {validation_error}")
+                    continue
+
+                change = {
+                    "action": "create",
+                    "target_category": item.get("target_category") or self.default_category,
+                    "file_name": item.get("file_name"),
+                    "content": item.get("content"),
+                }
+                file_path = self._apply_change(change)
+                if file_path:
+                    title = item.get("file_name") or ""
+                    content = item.get("content") or ""
+                    for line in content.splitlines():
+                        if line.startswith("title:"):
+                            title = line.replace("title:", "").strip()
+                            break
+                    created.append({"file_path": file_path, "action": "create", "title": title})
+        except Exception as e:
+            self._handle_exception(e, "Bootstrap 生成")
+
+        return created
+
     def generate_doc_update(self, commit_message: str, diff: str) -> Optional[Dict]:
         base_context = self._get_base_context()
         processed_diff = self._preprocess_diff(diff)
@@ -400,4 +524,3 @@ Diff Snippet:
 
         print(f"已应用文档{action}：{file_path}")
         return file_path
-

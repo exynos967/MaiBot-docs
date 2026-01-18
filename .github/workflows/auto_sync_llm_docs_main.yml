@@ -11,6 +11,11 @@ on:
         required: false
         default: false
         type: boolean
+      bootstrap:
+        description: "Generate initial docs baseline from repo snapshot"
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: write
@@ -66,11 +71,14 @@ jobs:
           LLM_API_STYLE: ${{ vars.LLM_API_STYLE || 'auto' }}
           SYNC_LOOKBACK_HOURS: ${{ vars.SYNC_LOOKBACK_HOURS || '6' }}
         run: |
-          if [ "${{ inputs.force_latest }}" = "true" ]; then
-            python scripts/main.py --force-latest
-          else
-            python scripts/main.py
+          args=""
+          if [ "${{ inputs.bootstrap }}" = "true" ]; then
+            args="$args --bootstrap"
           fi
+          if [ "${{ inputs.force_latest }}" = "true" ]; then
+            args="$args --force-latest"
+          fi
+          python scripts/main.py $args
 
       - name: Save sync state cache
         if: always()
@@ -97,4 +105,3 @@ jobs:
           base: ${{ github.ref_name }}
           add-paths: |
             develop/llm/main/**
-

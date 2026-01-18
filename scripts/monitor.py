@@ -1,3 +1,4 @@
+import base64
 import json
 from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Tuple
@@ -70,6 +71,69 @@ class GitHubMonitor:
         response = self.client.get(url)
         response.raise_for_status()
         return response.json() or []
+
+    def get_head_sha(self) -> str:
+        """获取指定分支的最新 commit sha。"""
+        url = f"{self.base_url}/commits"
+        params = {"per_page": 1, "sha": config.UPSTREAM_BRANCH}
+        response = self.client.get(url, params=params)
+        response.raise_for_status()
+        commits = response.json() or []
+        return (commits[0].get("sha") or "") if commits else ""
+
+    def get_latest_tag_name(self) -> str:
+        tags = self.get_latest_tags()
+        return (tags[0].get("name") or "") if tags else ""
+
+    def get_readme_text(self) -> str:
+        url = f"{self.base_url}/readme"
+        params = {"ref": config.UPSTREAM_BRANCH}
+        response = self.client.get(url, params=params)
+        if response.status_code == 404:
+            return ""
+        response.raise_for_status()
+        data = response.json() or {}
+        encoding = data.get("encoding")
+        content = (data.get("content") or "").strip()
+        if encoding == "base64" and content:
+            try:
+                raw = base64.b64decode(content.encode("utf-8"))
+                return raw.decode("utf-8", errors="replace")
+            except Exception:
+                return ""
+        return ""
+
+    def get_repo_tree_paths(self, max_paths: int = 2000) -> List[str]:
+        """获取分支 HEAD 的仓库文件路径列表（递归），用于生成初始文档上下文。"""
+        branch_url = f"{self.base_url}/branches/{config.UPSTREAM_BRANCH}"
+        response = self.client.get(branch_url)
+        response.raise_for_status()
+        branch_data = response.json() or {}
+
+        tree_sha = (
+            (((branch_data.get("commit") or {}).get("commit") or {}).get("tree") or {}).get("sha") or ""
+        )
+        if not tree_sha:
+            tree_sha = config.UPSTREAM_BRANCH
+
+        tree_url = f"{self.base_url}/git/trees/{tree_sha}"
+        response = self.client.get(tree_url, params={"recursive": 1})
+        response.raise_for_status()
+        tree = (response.json() or {}).get("tree") or []
+
+        paths: List[str] = []
+        for item in tree:
+            if item.get("type") != "blob":
+                continue
+            p = (item.get("path") or "").strip()
+            if not p:
+                continue
+            paths.append(p)
+
+        paths = sorted(set(paths))
+        if len(paths) > max_paths:
+            return paths[:max_paths]
+        return paths
 
     def check_for_updates(self, force_latest: bool = False) -> Tuple[List[Dict], Dict]:
         state = self._load_state()
@@ -148,4 +212,3 @@ class GitHubMonitor:
 
     def save_state(self, state: Dict) -> None:
         self._save_state(state)
-

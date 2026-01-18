@@ -16,6 +16,47 @@ class MainController:
         self.updated_files = set()
         self.ai_changes = []
         self.docs_root = config.DOCS_ROOT
+        self.bootstrap_mode = False
+
+    def _build_repo_context(self, *, head_sha: str, tree_paths: List[str], readme: str) -> str:
+        # Keep the prompt small and verifiable: tree summary + a limited README snippet.
+        max_readme_chars = 8000
+        readme_text = (readme or "").strip()
+        if len(readme_text) > max_readme_chars:
+            readme_text = readme_text[:max_readme_chars] + "\n\n...[truncated]..."
+
+        # Summarize tree by top-level entries, plus representative paths.
+        top_level: Dict[str, List[str]] = {}
+        for p in tree_paths:
+            top = (p.split("/", 1)[0] or "").strip()
+            top_level.setdefault(top, []).append(p)
+
+        lines: List[str] = []
+        lines.append(f"Repo: {config.REPO_NAME}")
+        lines.append(f"Branch: {config.UPSTREAM_BRANCH}")
+        if head_sha:
+            lines.append(f"Head: {head_sha}")
+        lines.append("")
+        lines.append("Top-level entries (file count):")
+        for k in sorted(top_level.keys()):
+            lines.append(f"- {k}: {len(top_level[k])}")
+        lines.append("")
+        lines.append("Representative paths:")
+        total = 0
+        for k in sorted(top_level.keys()):
+            examples = sorted(top_level[k])[:20]
+            for ex in examples:
+                lines.append(f"- {ex}")
+                total += 1
+                if total >= 300:
+                    break
+            if total >= 300:
+                break
+        lines.append("")
+        lines.append("README (snippet):")
+        lines.append(readme_text or "(no README found)")
+        lines.append("")
+        return "\n".join(lines)
 
     def _write_snapshot_indexes(self) -> None:
         snapshots_root = os.path.join(self.docs_root, "snapshots")
@@ -110,6 +151,25 @@ class MainController:
     def run(self, force_latest: bool = False) -> None:
         print("=== MaiBot 文档自动化同步开始 ===")
         try:
+            if self.bootstrap_mode:
+                head_sha = self.monitor.get_head_sha()
+                readme = self.monitor.get_readme_text()
+                tree_paths = self.monitor.get_repo_tree_paths()
+
+                latest_tag = self.monitor.get_latest_tag_name() if config.ENABLE_SNAPSHOTS else ""
+                self.monitor.save_state({"last_commit_sha": head_sha, "last_tag": latest_tag})
+
+                repo_context = self._build_repo_context(head_sha=head_sha, tree_paths=tree_paths, readme=readme)
+                created = self.doc_gen.generate_bootstrap_docs(repo_context)
+                for item in created:
+                    file_path = item.get("file_path")
+                    if file_path:
+                        self.updated_files.add(file_path)
+                        self.ai_changes.append(item)
+
+                self.output_summary([{"type": "bootstrap", "sha": head_sha}])
+                return
+
             updates, new_state = self.monitor.check_for_updates(force_latest=force_latest)
             if not updates:
                 print("🏁 未发现新变更。退出。")
@@ -148,7 +208,14 @@ class MainController:
                 latest_update = updates[-1] if updates else {}
                 branch = config.UPSTREAM_BRANCH
 
-                if latest_update.get("type") == "release":
+                if latest_update.get("type") == "bootstrap":
+                    head_sha = (latest_update.get("sha") or "")[:7]
+                    pr_title = f"docs({branch}): 初始化 LLM 文档基线"
+                    pr_body = (
+                        f"🧱 基于 `{config.REPO_NAME}`@`{branch}` 的当前代码快照生成初始 LLM 文档分块。\n\n"
+                        + (f"Head: `{head_sha}`\n\n" if head_sha else "")
+                    )
+                elif latest_update.get("type") == "release":
                     tag_name = latest_update.get("tag_name")
                     pr_title = f"docs({branch}): 归档版本 {tag_name}"
                     pr_body = f"🚀 检测到 `{config.REPO_NAME}` 新版本发布：`{tag_name}`。\n\n本 PR 自动创建了该版本的文档快照（仅 LLM 自动维护部分）。"
@@ -181,8 +248,9 @@ class MainController:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="MaiBot Docs Automation")
     parser.add_argument("--force-latest", action="store_true", help="Force sync with the latest commit")
+    parser.add_argument("--bootstrap", action="store_true", help="Generate initial docs baseline from repo snapshot")
     args = parser.parse_args()
 
     controller = MainController()
+    controller.bootstrap_mode = bool(args.bootstrap)
     controller.run(force_latest=args.force_latest)
-
