@@ -1,3 +1,5 @@
-# 快照（main）
+# 文档快照
 
-这里存放按 `Mai-with-u/MaiBot` 的 **Tag** 归档的文档快照（仅包含 `develop/llm/maibot/main/` 的自动维护内容）。
+这里存放按 `Mai-with-u/MaiBot` 的 Tag 归档的文档快照（仅 `develop/llm/maibot/main`）。
+
+- [EasyInstall-windows](/develop/llm/maibot/main/snapshots/EasyInstall-windows/)
