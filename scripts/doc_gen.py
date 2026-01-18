@@ -21,16 +21,31 @@ class DocGenerator:
         self.docs_root = config.DOCS_ROOT
         self.show_base_url_in_logs = config.SHOW_BASE_URL_IN_LOGS
 
-        # Keep it simple: all LLM-generated docs go into a single folder.
-        self.categories = ["chunks"]
-        self.default_category = "chunks"
+        # LLM docs are organized into modular categories (AstrBot-docs-like).
+        self.categories = [
+            "ai_integration",
+            "design_standards",
+            "messages",
+            "platform_adapters",
+            "plugin_system",
+            "deployment",
+            "learning_system",
+            "storage_utils",
+        ]
+        self.default_category = "design_standards"
 
     def _get_base_context(self) -> str:
-        """递归读取 docs_root 下的所有 md 文件作为上下文（排除 snapshots/）。"""
+        """递归读取 docs_root 下的 md 文件作为上下文（排除 snapshots/，并做长度限制）。"""
         if not os.path.exists(self.docs_root):
             return ""
 
+        max_files = int(os.getenv("DOC_CONTEXT_MAX_FILES", "40") or "40")
+        max_chars_per_file = int(os.getenv("DOC_CONTEXT_MAX_CHARS_PER_FILE", "2000") or "2000")
+        max_total_chars = int(os.getenv("DOC_CONTEXT_MAX_TOTAL_CHARS", "40000") or "40000")
+
         context: List[str] = []
+        total_chars = 0
+        included = 0
         for root, _, files in os.walk(self.docs_root):
             if "snapshots" in root.split(os.sep):
                 continue
@@ -40,7 +55,17 @@ class DocGenerator:
                 full_path = os.path.join(root, filename)
                 rel_path = os.path.relpath(full_path, self.docs_root)
                 with open(full_path, "r", encoding="utf-8") as f:
-                    context.append(f"--- Doc: {rel_path} ---\n{f.read()}")
+                    text = f.read() or ""
+                    if len(text) > max_chars_per_file:
+                        text = text[:max_chars_per_file] + "\n\n...[truncated]..."
+                    chunk = f"--- Doc: {rel_path} ---\n{text}"
+                    if total_chars + len(chunk) > max_total_chars:
+                        return "\n\n".join(context)
+                    context.append(chunk)
+                    total_chars += len(chunk)
+                    included += 1
+                    if included >= max_files:
+                        return "\n\n".join(context)
 
         return "\n\n".join(context)
 
@@ -262,6 +287,8 @@ Diff Snippet:
         file_name = (change.get("file_name") or "").strip()
         if not file_name.endswith(".md"):
             return "file_name must end with .md"
+        if action == "create" and file_name == "index.md":
+            return "file_name must not be index.md for create"
         if any(x in file_name for x in ["/", "\\", ".."]):
             return "file_name must be a plain filename (no path)"
 
@@ -303,7 +330,9 @@ Diff Snippet:
             return "file_name must be a plain filename (no path)"
 
         target_category = (item.get("target_category") or "").strip()
-        if target_category and target_category not in self.categories:
+        if not target_category:
+            return "target_category is required"
+        if target_category not in self.categories:
             return f"target_category must be one of: {', '.join(self.categories)}"
 
         content = item.get("content")
@@ -312,7 +341,7 @@ Diff Snippet:
         if not content.lstrip().startswith("---"):
             return "content must start with YAML frontmatter ('---')"
 
-        required_sections = ("## 概述", "## 适用范围", "## 变更影响分析")
+        required_sections = ("## 概述", "## 目录/结构", "## 适用范围", "## 变更影响分析")
         for sec in required_sections:
             if sec not in content:
                 return f"content must include section: {sec}"
@@ -334,14 +363,16 @@ Diff Snippet:
         return None
 
     def generate_bootstrap_docs(self, repo_context: str) -> List[Dict]:
-        """基于仓库结构与 README 的快照生成初始文档分块（用于首次建档/重建基线）。"""
+        """基于仓库结构与 README 的快照生成初始文档（用于首次建档/重建基线）。"""
         base_context = self._get_base_context()
         today = datetime.now().strftime("%Y-%m-%d")
         categories_str = ", ".join(self.categories)
+        repo_name = config.REPO_NAME
+        branch = config.UPSTREAM_BRANCH
 
         system_instruction = "你是一个只输出 JSON 的文档助手。禁止编造，不得输出非 JSON 内容。"
         prompt = f"""
-你是一个高级软件工程师和技术文档专家。你的任务是为 MaiBot 生成**初始**开发文档分块（面向 AI/RAG 的 Functional Chunks）。
+你是一个高级软件工程师和技术文档专家。你的任务是为 `{repo_name}` 的 `{branch}` 分支生成**初始**开发文档（按模块分组，面向 AI/RAG）。
 
 注意：你只能基于下面提供的“仓库信息”与“现有文档”，输出**概括性、可验证**的文档。若缺少细节，请明确写“需要以源码验证/需要补充信息”，不要猜测接口。
 
@@ -355,8 +386,8 @@ Diff Snippet:
 {base_context}
 
 --- 输出要求 ---
-1) 只输出一个 JSON 数组（最多 4 项），每一项是一个对象，仅包含这些 key：
-   - target_category: 必须为 "chunks"
+1) 只输出一个 JSON 数组（最多 12 项），每一项是一个对象，仅包含这些 key：
+   - target_category: 必须为可用分类之一
    - file_name: 纯文件名，以 .md 结尾，禁止包含路径/..，且不能是 index.md
    - content: Markdown，必须以 YAML frontmatter 开头，且至少包含以下章节：
        - ## 概述
@@ -364,7 +395,7 @@ Diff Snippet:
        - ## 适用范围与边界（标题中必须包含“适用范围”）
        - ## 变更影响分析（初始建档也需要此章节）
    - evidence: 字符串数组（至少 2 条），每条必须能在“仓库信息（快照）”中找到原样子串（建议使用路径/文件名/目录名/README 中的专有名词）
-   - reason: 1 句理由（为什么需要这几篇作为初始分块）
+   - reason: 1 句理由（为什么需要这些文档作为初始基线）
 2) frontmatter 字段必须包含：
    ---
    title: (简洁标题)
@@ -373,7 +404,7 @@ Diff Snippet:
    last_updated: {today}
    related_base: (可为空)
    ---
-3) 文档尽量短（每篇不超过 200 行），用于后续增量迭代完善。
+3) 尽量覆盖多个分类（至少 4 个不同分类）；文档尽量短（每篇不超过 200 行），用于后续增量迭代完善。
 """
 
         created: List[Dict] = []
@@ -415,10 +446,12 @@ Diff Snippet:
         processed_diff = self._preprocess_diff(diff)
         today = datetime.now().strftime("%Y-%m-%d")
         categories_str = ", ".join(self.categories)
+        repo_name = config.REPO_NAME
+        branch = config.UPSTREAM_BRANCH
 
         system_instruction = "你是一个只输出 JSON 的文档助手。禁止编造，不得引入 Diff/Summary 中不存在的符号或行为。"
         prompt = f"""
-你是一个高级软件工程师和技术文档专家。你的任务是维护 MaiBot 的开发文档（面向 AI/RAG 的 Functional Chunks）。
+你是一个高级软件工程师和技术文档专家。你的任务是维护 `{repo_name}` 的 `{branch}` 分支开发文档（按模块分组，面向 AI/RAG）。
 
 --- 当前分类结构 ---
 所有文档必须归入以下分类之一：
@@ -457,7 +490,7 @@ Diff Snippet:
 --- 示例输出结构 ---
 {{
   \"action\": \"create\",
-  \"target_category\": \"chunks\",
+  \"target_category\": \"design_standards\",
   \"file_name\": \"new_feature.md\",
   \"content\": \"---\\ntitle: ...\\n...\\n---\\n\\n## 概述\\n...\\n## 关键实现\\n...\\n## 变更影响分析\\n...\",\n  \"evidence\": [\"path/to/file.py\", \"ClassName.method\"],\n  \"reason\": \"\"\n}}
 """

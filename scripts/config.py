@@ -25,10 +25,9 @@ class Config:
 
     # Sync behavior
     STATE_FILE = os.getenv("STATE_FILE", "scripts/state.json").strip()
-    DOCS_ROOT = os.getenv("DOCS_ROOT", "develop/llm/main").strip()
+    DOCS_ROOT = os.getenv("DOCS_ROOT", "develop/llm/maibot/main").strip()
     ENABLE_SNAPSHOTS = os.getenv("ENABLE_SNAPSHOTS", "0").strip() == "1"
     SYNC_LOOKBACK_HOURS = int(os.getenv("SYNC_LOOKBACK_HOURS", "6") or "6")
 
 
 config = Config()
-

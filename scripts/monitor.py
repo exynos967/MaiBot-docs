@@ -103,6 +103,38 @@ class GitHubMonitor:
                 return ""
         return ""
 
+    def get_file_text(self, path: str, max_chars: int = 8000) -> str:
+        """通过 GitHub Contents API 拉取单个文件内容（用于 bootstrap，上游只读）。"""
+        path = (path or "").strip().lstrip("/")
+        if not path:
+            return ""
+
+        url = f"{self.base_url}/contents/{path}"
+        params = {"ref": config.UPSTREAM_BRANCH}
+        response = self.client.get(url, params=params)
+        if response.status_code == 404:
+            return ""
+        response.raise_for_status()
+
+        data = response.json() or {}
+        if (data.get("type") or "") != "file":
+            return ""
+
+        encoding = data.get("encoding")
+        content = (data.get("content") or "").strip()
+        if encoding != "base64" or not content:
+            return ""
+
+        try:
+            raw = base64.b64decode(content.encode("utf-8"))
+            text = raw.decode("utf-8", errors="replace")
+        except Exception:
+            return ""
+
+        if len(text) > max_chars:
+            return text[:max_chars] + "\n\n...[truncated]..."
+        return text
+
     def get_repo_tree_paths(self, max_paths: int = 2000) -> List[str]:
         """获取分支 HEAD 的仓库文件路径列表（递归），用于生成初始文档上下文。"""
         branch_url = f"{self.base_url}/branches/{config.UPSTREAM_BRANCH}"

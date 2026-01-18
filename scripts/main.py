@@ -2,7 +2,7 @@ import argparse
 import os
 import shutil
 import sys
-from typing import Dict, List
+from typing import Dict, List, Tuple
 
 from config import config
 from doc_gen import DocGenerator
@@ -17,6 +17,74 @@ class MainController:
         self.ai_changes = []
         self.docs_root = config.DOCS_ROOT
         self.bootstrap_mode = False
+
+    def _select_bootstrap_files(self, tree_paths: List[str], max_files: int = 12) -> List[str]:
+        """从仓库文件树中挑选少量“高信号”文件，供 bootstrap 生成更具体的文档上下文。"""
+        paths = [p.strip().lstrip("./") for p in (tree_paths or []) if p and p.strip()]
+        path_set = set(paths)
+
+        # Prefer small, informative, human-written or schema-like files.
+        priority_exact = [
+            "README.md",
+            "README.zh.md",
+            "pyproject.toml",
+            "requirements.txt",
+            "Dockerfile",
+            "docker-compose.yml",
+            "compose.yml",
+            "compose.yaml",
+            "template/bot_config_template.toml",
+            "template/model_config_template.toml",
+        ]
+
+        def is_text_like(p: str) -> bool:
+            if p in {"Dockerfile", "Makefile"}:
+                return True
+            suffixes = (".py", ".md", ".toml", ".yml", ".yaml", ".json", ".ini", ".cfg", ".txt", ".sh", ".env")
+            return p.endswith(suffixes)
+
+        selected: List[str] = []
+        for p in priority_exact:
+            if p in path_set and is_text_like(p):
+                selected.append(p)
+                if len(selected) >= max_files:
+                    return selected
+
+        def add_first_match(pred) -> None:
+            for p in paths:
+                if p in selected:
+                    continue
+                if not is_text_like(p):
+                    continue
+                if pred(p):
+                    selected.append(p)
+                    return
+
+        # Architecture / core loop hints
+        add_first_match(lambda p: "/chat/brain_chat/PFC/" in p and p.endswith("pfc.py"))
+        add_first_match(lambda p: "/chat/brain_chat/PFC/" in p and p.endswith("action_planner.py"))
+
+        # Learning system hints
+        add_first_match(lambda p: "/bw_learner/" in p and p.endswith("expression_learner.py"))
+        add_first_match(lambda p: "/bw_learner/" in p and p.endswith("jargon_miner.py"))
+
+        # Plugin/adapters hints
+        add_first_match(lambda p: "/plugins/" in p and p.endswith("_manifest.json"))
+        add_first_match(lambda p: "/plugins/" in p and p.endswith("plugin.py"))
+        add_first_match(lambda p: "/adapter" in p.lower() and p.endswith(".py"))
+
+        # If still not enough, pick a few representative src python files.
+        for p in paths:
+            if len(selected) >= max_files:
+                break
+            if p in selected:
+                continue
+            if not is_text_like(p):
+                continue
+            if p.startswith("src/") and p.endswith(".py"):
+                selected.append(p)
+
+        return selected[:max_files]
 
     def _build_repo_context(self, *, head_sha: str, tree_paths: List[str], readme: str) -> str:
         # Keep the prompt small and verifiable: tree summary + a limited README snippet.
@@ -52,6 +120,25 @@ class MainController:
                     break
             if total >= 300:
                 break
+
+        selected_files = self._select_bootstrap_files(tree_paths, max_files=12)
+        file_snippets: List[Tuple[str, str]] = []
+        for p in selected_files:
+            if p.lower().startswith("readme"):
+                continue
+            text = self.monitor.get_file_text(p, max_chars=6000)
+            if not text.strip():
+                continue
+            file_snippets.append((p, text))
+
+        if file_snippets:
+            lines.append("")
+            lines.append("Selected file snippets (truncated):")
+            for p, text in file_snippets:
+                lines.append(f"--- File: {p} ---")
+                lines.append("```text")
+                lines.append(text)
+                lines.append("```")
         lines.append("")
         lines.append("README (snippet):")
         lines.append(readme_text or "(no README found)")
@@ -62,6 +149,8 @@ class MainController:
         snapshots_root = os.path.join(self.docs_root, "snapshots")
         if not os.path.isdir(snapshots_root):
             return
+
+        docs_route_prefix = "/" + self.docs_root.strip("/").replace(os.sep, "/")
 
         versions = sorted(
             [d for d in os.listdir(snapshots_root) if os.path.isdir(os.path.join(snapshots_root, d))],
@@ -75,7 +164,7 @@ class MainController:
             "",
         ]
         for v in versions:
-            index_lines.append(f"- [{v}](/develop/llm/main/snapshots/{v}/)")
+            index_lines.append(f"- [{v}]({docs_route_prefix}/snapshots/{v}/)")
         index_lines.append("")
 
         index_path = os.path.join(snapshots_root, "index.md")
@@ -149,7 +238,7 @@ class MainController:
             print(f"❌ 处理提交 {sha[:7]} 时出错：{e}")
 
     def run(self, force_latest: bool = False) -> None:
-        print("=== MaiBot 文档自动化同步开始 ===")
+        print("=== LLM 文档自动化同步开始 ===")
         try:
             if self.bootstrap_mode:
                 head_sha = self.monitor.get_head_sha()
@@ -190,7 +279,7 @@ class MainController:
         except Exception as e:
             print(f"💥 主循环出现严重错误：{e}")
             sys.exit(1)
-        print("=== MaiBot 文档自动化同步完成 ===")
+        print("=== LLM 文档自动化同步完成 ===")
 
     def output_summary(self, updates: List[Dict]) -> None:
         if not self.updated_files:
@@ -207,21 +296,22 @@ class MainController:
             if github_output:
                 latest_update = updates[-1] if updates else {}
                 branch = config.UPSTREAM_BRANCH
+                repo_slug = (config.REPO_NAME.split("/")[-1] if config.REPO_NAME else "repo").strip() or "repo"
 
                 if latest_update.get("type") == "bootstrap":
                     head_sha = (latest_update.get("sha") or "")[:7]
-                    pr_title = f"docs({branch}): 初始化 LLM 文档基线"
+                    pr_title = f"docs({repo_slug}@{branch}): 初始化 LLM 文档基线"
                     pr_body = (
                         f"🧱 基于 `{config.REPO_NAME}`@`{branch}` 的当前代码快照生成初始 LLM 文档分块。\n\n"
                         + (f"Head: `{head_sha}`\n\n" if head_sha else "")
                     )
                 elif latest_update.get("type") == "release":
                     tag_name = latest_update.get("tag_name")
-                    pr_title = f"docs({branch}): 归档版本 {tag_name}"
+                    pr_title = f"docs({repo_slug}@{branch}): 归档版本 {tag_name}"
                     pr_body = f"🚀 检测到 `{config.REPO_NAME}` 新版本发布：`{tag_name}`。\n\n本 PR 自动创建了该版本的文档快照（仅 LLM 自动维护部分）。"
                 else:
                     sha = (latest_update.get("sha") or "")[:7]
-                    pr_title = f"docs({branch}): 自动同步提交 {sha}"
+                    pr_title = f"docs({repo_slug}@{branch}): 自动同步提交 {sha}"
                     pr_body = f"📝 基于 `{config.REPO_NAME}`@`{branch}` 提交 `{latest_update.get('sha', '')}` 自动更新文档。\n\n"
 
                     if self.ai_changes:

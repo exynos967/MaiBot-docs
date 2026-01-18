@@ -1,9 +1,9 @@
-name: Auto Sync LLM Docs (MaiBot main)
+name: Auto Sync LLM Docs (maim_message master)
 
 on:
   schedule:
     # GitHub Actions cron uses UTC.
-    - cron: "0 */3 * * *"
+    - cron: "10 */3 * * *"
   workflow_dispatch:
     inputs:
       force_latest:
@@ -22,7 +22,7 @@ permissions:
   pull-requests: write
 
 concurrency:
-  group: auto-sync-llm-docs-maibot-main
+  group: auto-sync-llm-docs-maim-message-master
   cancel-in-progress: false
 
 jobs:
@@ -47,19 +47,19 @@ jobs:
       - name: Restore sync state cache
         uses: actions/cache/restore@v4
         with:
-          path: scripts/state_maibot_main.json
-          key: sync-state-maibot-main-${{ github.run_id }}
+          path: scripts/state_maim_message_master.json
+          key: sync-state-maim-message-master-${{ github.run_id }}
           restore-keys: |
-            sync-state-maibot-main-
+            sync-state-maim-message-master-
 
       - name: Run sync script
         id: sync_script
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          UPSTREAM_REPO: Mai-with-u/MaiBot
-          UPSTREAM_BRANCH: main
-          STATE_FILE: scripts/state_maibot_main.json
-          DOCS_ROOT: develop/llm/maibot/main
+          UPSTREAM_REPO: Mai-with-u/maim_message
+          UPSTREAM_BRANCH: master
+          STATE_FILE: scripts/state_maim_message_master.json
+          DOCS_ROOT: develop/llm/maim_message/master
           ENABLE_SNAPSHOTS: "1"
 
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
@@ -84,13 +84,13 @@ jobs:
         if: always()
         uses: actions/cache/save@v4
         with:
-          path: scripts/state_maibot_main.json
-          key: sync-state-maibot-main-${{ github.run_id }}
+          path: scripts/state_maim_message_master.json
+          key: sync-state-maim-message-master-${{ github.run_id }}
 
       - name: Set branch name
         if: steps.sync_script.outputs.has_updates == 'true'
         id: vars
-        run: echo "branch=auto-llm-docs-maibot-main-$(date +'%Y%m%d-%H%M')" >> $GITHUB_OUTPUT
+        run: echo "branch=auto-llm-docs-maim-message-master-$(date +'%Y%m%d-%H%M')" >> $GITHUB_OUTPUT
 
       - name: Create Pull Request
         if: steps.sync_script.outputs.has_updates == 'true'
@@ -101,7 +101,7 @@ jobs:
           title: ${{ steps.sync_script.outputs.pr_title }}
           body: ${{ steps.sync_script.outputs.pr_body }}
           labels: auto-generated
-          commit-message: "docs(llm/maibot/main): automated sync from upstream"
+          commit-message: "docs(llm/maim_message/master): automated sync from upstream"
           base: ${{ github.ref_name }}
           add-paths: |
-            develop/llm/maibot/main/**
+            develop/llm/maim_message/master/**

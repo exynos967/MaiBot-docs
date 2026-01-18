@@ -4,24 +4,24 @@ title: MaiBot 文档中心
 hero:
   name: MaiBot
   text: 文档与归档
-  tagline: 手写文档 + LLM 自动维护（按 main/dev 分支隔离）
+  tagline: LLM 自动维护（按仓库与分支隔离）
   image:
-    src: /images/mai.png
+    src: /title_img/mai.png
     alt: MaiBot
   actions:
     - theme: brand
-      text: Main 分支（LLM）
-      link: /develop/llm/main/
+      text: MaiBot main
+      link: /develop/llm/maibot/main/
     - theme: brand
-      text: Dev 分支（LLM）
-      link: /develop/llm/dev/
+      text: MaiBot dev
+      link: /develop/llm/maibot/dev/
     - theme: alt
-      text: 开发文档（手写）
-      link: /develop/
+      text: maim_message
+      link: /develop/llm/maim_message/master/
 features:
   - icon: 🧩
-    title: 分支隔离
-    details: main/dev 文档独立维护与展示，避免内容混淆。
+    title: 仓库与分支隔离
+    details: MaiBot 与 maim_message 以及各自分支独立维护与展示，避免内容混淆。
   - icon: 🏷️
     title: main 快照归档
     details: 仅归档 LLM 自动生成部分，按 Tag 生成快照用于回溯。
@@ -33,6 +33,7 @@ features:
 ## 链接
 
 - 代码仓库：<https://github.com/Mai-with-u/MaiBot>
+- maim_message：<https://github.com/Mai-with-u/maim_message>
 - 文档仓库：<https://github.com/Mai-with-u/docs>
 - 反馈与讨论：<https://github.com/Mai-with-u/MaiBot/issues>
 

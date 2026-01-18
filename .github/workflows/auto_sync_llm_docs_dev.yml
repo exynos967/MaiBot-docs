@@ -1,4 +1,4 @@
-name: Auto Sync LLM Docs (dev)
+name: Auto Sync LLM Docs (MaiBot dev)
 
 on:
   schedule:
@@ -22,7 +22,7 @@ permissions:
   pull-requests: write
 
 concurrency:
-  group: auto-sync-llm-docs-dev
+  group: auto-sync-llm-docs-maibot-dev
   cancel-in-progress: false
 
 jobs:
@@ -47,10 +47,10 @@ jobs:
       - name: Restore sync state cache
         uses: actions/cache/restore@v4
         with:
-          path: scripts/state_dev.json
-          key: sync-state-dev-${{ github.run_id }}
+          path: scripts/state_maibot_dev.json
+          key: sync-state-maibot-dev-${{ github.run_id }}
           restore-keys: |
-            sync-state-dev-
+            sync-state-maibot-dev-
 
       - name: Run sync script
         id: sync_script
@@ -58,8 +58,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           UPSTREAM_REPO: Mai-with-u/MaiBot
           UPSTREAM_BRANCH: dev
-          STATE_FILE: scripts/state_dev.json
-          DOCS_ROOT: develop/llm/dev
+          STATE_FILE: scripts/state_maibot_dev.json
+          DOCS_ROOT: develop/llm/maibot/dev
           ENABLE_SNAPSHOTS: "0"
 
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
@@ -84,13 +84,13 @@ jobs:
         if: always()
         uses: actions/cache/save@v4
         with:
-          path: scripts/state_dev.json
-          key: sync-state-dev-${{ github.run_id }}
+          path: scripts/state_maibot_dev.json
+          key: sync-state-maibot-dev-${{ github.run_id }}
 
       - name: Set branch name
         if: steps.sync_script.outputs.has_updates == 'true'
         id: vars
-        run: echo "branch=auto-llm-docs-dev-$(date +'%Y%m%d-%H%M')" >> $GITHUB_OUTPUT
+        run: echo "branch=auto-llm-docs-maibot-dev-$(date +'%Y%m%d-%H%M')" >> $GITHUB_OUTPUT
 
       - name: Create Pull Request
         if: steps.sync_script.outputs.has_updates == 'true'
@@ -101,7 +101,7 @@ jobs:
           title: ${{ steps.sync_script.outputs.pr_title }}
           body: ${{ steps.sync_script.outputs.pr_body }}
           labels: auto-generated
-          commit-message: "docs(llm/dev): automated sync from upstream"
+          commit-message: "docs(llm/maibot/dev): automated sync from upstream"
           base: ${{ github.ref_name }}
           add-paths: |
-            develop/llm/dev/**
+            develop/llm/maibot/dev/**
