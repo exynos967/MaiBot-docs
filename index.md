@@ -3,46 +3,38 @@ layout: home
 title: MaiBot 文档中心
 hero:
   name: MaiBot
-  text: 多模型、拟人化、可扩展的智能体
-  tagline: 多种模型协作，仿生的思考规划架构，模块化设计和内部扩展性带来拟人化的交互体验
+  text: 文档与归档
+  tagline: 手写文档 + LLM 自动维护（按 main/dev 分支隔离）
   image:
     src: /images/mai.png
     alt: MaiBot
   actions:
     - theme: brand
-      text: 功能介绍
-      link: /features
+      text: Main 分支（LLM）
+      link: /develop/llm/main/
     - theme: brand
-      text: 用户指南
-      link: /manual/
+      text: Dev 分支（LLM）
+      link: /develop/llm/dev/
     - theme: alt
-      text: 开发文档
+      text: 开发文档（手写）
       link: /develop/
 features:
-  - icon: 🧠
-    title: 好多LLM
-    details: 基于多个LLM配合协作，带来自然语言理解与生成能力
-  - icon: 💾
-    title: 能够记点东西
-    details: 能记住交流中发生的事，也能记住人类是怎么说话的
-  - icon: ❤️
-    title: 仿生的思考
-    details: 参考认知科学理论的模块化设计，并可以进行拓展
-  - icon: 🔧
-    title: 灵活配置
-    details: 支持多种API服务，个性化设置轻松实现
-  - icon: 🚢
-    title: 多种部署
-    details: 支持启动器、Docker、Linux、Windows等多种部署方式
-  - icon: 🔄
-    title: 持续更新
-    details: 定期更新和改进，不断增强功能与性能
+  - icon: 🧩
+    title: 分支隔离
+    details: main/dev 文档独立维护与展示，避免内容混淆。
+  - icon: 🏷️
+    title: main 快照归档
+    details: 仅归档 LLM 自动生成部分，按 Tag 生成快照用于回溯。
+  - icon: 🔁
+    title: dev 增量更新
+    details: 跟随 dev 分支提交进行增量维护，保持开发期文档同步。
 ---
 
-## 获取更多支持
+## 链接
 
-- 访问[GitHub仓库](https://github.com/MaiM-with-u/MaiBot)提交问题或贡献代码
-- 加入用户交流群获取帮助
+- 代码仓库：<https://github.com/Mai-with-u/MaiBot>
+- 文档仓库：<https://github.com/Mai-with-u/docs>
+- 反馈与讨论：<https://github.com/Mai-with-u/MaiBot/issues>
 
 <style scoped>
 #star-canvas {

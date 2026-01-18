@@ -44,6 +44,20 @@ pnpm docs:build
 pnpm docs:preview
 ```
 
+## 自动化同步（LLM 增量维护）
+
+本仓库包含两条 GitHub Actions 工作流，用于从 `Mai-with-u/MaiBot` 同步变更并通过 LLM 增量维护开发文档：
+
+- `develop/llm/main/`：跟踪上游 `main` 分支；并在检测到新 Tag 时归档快照到 `develop/llm/main/snapshots/<tag>/`（仅归档 LLM 自动维护部分）。
+- `develop/llm/dev/`：跟踪上游 `dev` 分支；仅维护“当前态”，不做快照归档。
+
+LLM 配置通过 GitHub Secrets/Vars 提供（不会写入仓库）：
+
+- `GEMINI_API_KEY`（或 `OPENAI_API_KEY`）
+- `BASE_URL`（或 `OPENAI_API_BASE`）
+- `MODEL_NAME`
+- 可选：`LLM_API_STYLE`、`GEMINI_API_VERSION`、`SYNC_LOOKBACK_HOURS`
+
 ## 贡献
 
 ### 完整方式
