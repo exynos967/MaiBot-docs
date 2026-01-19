@@ -59,6 +59,7 @@ LLM 配置通过 GitHub Secrets/Vars 提供（不会写入仓库）：
 
 - `GEMINI_API_VERSION`（可选，默认 `v1beta`）
 - `LLM_API_STYLE`（可选，默认 `auto`；可设为 `openai`/`gemini` 强制风格）
+- `LLM_TEMPERATURE`（可选，默认 `0.2`；控制大多数 LLM 生成阶段的温度）
 - `SYNC_LOOKBACK_HOURS`（可选，默认 `6`）
 - `LLM_STRUCTURED_OUTPUT`（可选，默认 `1`；OpenAI 风格接口启用 `response_format: json_schema`，不支持会自动降级）
 - `LLM_MAX_OUTPUT_TOKENS`（可选，默认空；**单一控制旋钮**：统一决定各阶段的 `max_tokens`。不填则各阶段使用内置默认值）

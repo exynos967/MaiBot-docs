@@ -55,6 +55,21 @@ class DocGenerator:
             v = int(default)
         return max(1, v)
 
+    def _get_temperature(self, env_var: str = "LLM_TEMPERATURE", default: float = 0.2) -> float:
+        """Resolve temperature from env with clamping to a safe range."""
+        raw = (os.getenv(env_var) or "").strip()
+        if not raw:
+            return float(default)
+        try:
+            v = float(raw)
+        except Exception:
+            return float(default)
+        if v < 0:
+            v = 0.0
+        if v > 2:
+            v = 2.0
+        return v
+
     def _schema_repo_map(self) -> Dict[str, Any]:
         return {
             "type": "object",
@@ -588,7 +603,7 @@ class DocGenerator:
             raise self._JsonParseError("Model output is not a string", raw_preview=str(type(text)))
 
         # Prefer explicit json code fence, but still parse robustly.
-        fence = re.search(r"```json\\s*(.*?)\\s*```", text, re.DOTALL | re.IGNORECASE)
+        fence = re.search(r"```json\s*(.*?)\s*```", text, re.DOTALL | re.IGNORECASE)
         if fence:
             return self._try_parse_json(fence.group(1))
 
@@ -718,7 +733,7 @@ Diff Snippet:
             summary = self._call_llm(
                 summary_prompt,
                 system_instruction=system_instruction,
-                temperature=0.2,
+                temperature=self._get_temperature(),
                 max_tokens=self._get_max_tokens("LLM_DIFF_SUMMARY_MAX_TOKENS", 8192),
             )
             return f"[Large Diff Summary]\n{summary}\n\n[Note: Original diff was {line_count} lines and was summarized.]"
@@ -866,7 +881,7 @@ Diff Snippet:
             raw_response = self._call_llm(
                 prompt,
                 system_instruction=system_instruction,
-                temperature=0.2,
+                temperature=self._get_temperature(),
                 max_tokens=self._get_max_tokens("LLM_BOOTSTRAP_DOCS_MAX_TOKENS", 8192),
                 response_schema=self._schema_bootstrap_docs(),
                 response_schema_name="bootstrap_docs",
@@ -958,12 +973,12 @@ Diff Snippet:
   \"target_category\": \"design_standards\",
   \"file_name\": \"new_feature.md\",
   \"content\": \"---\\ntitle: ...\\n...\\n---\\n\\n## 概述\\n...\\n## 关键实现\\n...\\n## 变更影响分析\\n...\",\n  \"evidence\": [\"path/to/file.py\", \"ClassName.method\"],\n  \"reason\": \"\"\n}}
-"""
+        """
         try:
             raw_response = self._call_llm(
                 prompt,
                 system_instruction=system_instruction,
-                temperature=0.2,
+                temperature=self._get_temperature(),
                 response_schema=self._schema_doc_update(),
                 response_schema_name="doc_update",
             )
@@ -1091,12 +1106,12 @@ Diff Snippet:
 
 --- 仓库信息（快照） ---
 {repo_context}
-"""
+        """
         try:
             raw = self._call_llm(
                 prompt,
                 system_instruction=system_instruction,
-                temperature=0.2,
+                temperature=self._get_temperature(),
                 max_tokens=max_tokens,
                 response_schema=self._schema_repo_map(),
                 response_schema_name="repo_map",
@@ -1174,13 +1189,26 @@ Diff Snippet:
         repo_map_text = json.dumps(repo_map or {}, ensure_ascii=False)
 
         def extract_files_from_block(block: str) -> List[str]:
-            found = re.findall(r"^--- File: (.+?) \\(part", block or "", flags=re.MULTILINE)
-            out: List[str] = []
-            for p in found:
-                p = (p or "").strip()
-                if p:
-                    out.append(p)
-            return sorted(set(out))
+            """Extract file list from the chunk header (avoid regex to keep it robust)."""
+            if not block:
+                return []
+            lines = (block or "").splitlines()
+            files: List[str] = []
+            in_list = False
+            for line in lines:
+                s = line.rstrip("\n")
+                if not in_list:
+                    if s.strip() == "Files in this chunk:":
+                        in_list = True
+                    continue
+                # Stop at the first blank line after the list.
+                if not s.strip():
+                    break
+                if s.lstrip().startswith("- "):
+                    p = s.strip()[2:].strip()
+                    if p:
+                        files.append(p)
+            return sorted(set(files))
 
         system_instruction = "你是一个只输出 JSON 的文档助手。禁止编造，不得输出非 JSON 内容。"
         prompt = f"""
@@ -1217,12 +1245,18 @@ Diff Snippet:
             raw = self._call_llm(
                 prompt,
                 system_instruction=system_instruction,
-                temperature=0.2,
+                temperature=self._get_temperature(),
                 max_tokens=max_tokens,
                 response_schema=self._schema_dir_analysis(),
                 response_schema_name="dir_analysis",
             )
             obj = self._extract_json(raw)
+            if isinstance(obj, list):
+                # Some models may wrap the object in a single-item array.
+                for it in obj:
+                    if isinstance(it, dict):
+                        obj = it
+                        break
             if not isinstance(obj, dict):
                 raise ValueError("directory analysis must be a JSON object")
 
@@ -1348,12 +1382,12 @@ Diff Snippet:
 
 --- dir_briefs ---
 {dir_briefs_text}
-"""
+        """
         try:
             raw = self._call_llm(
                 prompt,
                 system_instruction=system_instruction,
-                temperature=0.2,
+                temperature=self._get_temperature(),
                 max_tokens=max_tokens,
                 response_schema=self._schema_bootstrap_doc_plan(),
                 response_schema_name="doc_plan",
@@ -1497,12 +1531,12 @@ Diff Snippet:
 
 --- Directory analyses (selected) ---
 {selected_text}
-"""
+        """
         try:
             raw = self._call_llm(
                 prompt,
                 system_instruction=system_instruction,
-                temperature=0.2,
+                temperature=self._get_temperature(),
                 max_tokens=max_tokens,
                 response_schema=self._schema_doc_page(),
                 response_schema_name="doc_page",
@@ -1620,12 +1654,12 @@ Diff Snippet:
 ```python
 {module_text}
 ```
-"""
+        """
         try:
             raw = self._call_llm(
                 prompt,
                 system_instruction=system_instruction,
-                temperature=0.2,
+                temperature=self._get_temperature(),
                 max_tokens=max_tokens,
                 response_schema=self._schema_doc_page(),
                 response_schema_name="api_page",
