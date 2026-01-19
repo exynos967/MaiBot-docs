@@ -719,7 +719,7 @@ Diff Snippet:
                 summary_prompt,
                 system_instruction=system_instruction,
                 temperature=0.2,
-                max_tokens=self._get_max_tokens("LLM_DIFF_SUMMARY_MAX_TOKENS", 2048),
+                max_tokens=self._get_max_tokens("LLM_DIFF_SUMMARY_MAX_TOKENS", 8192),
             )
             return f"[Large Diff Summary]\n{summary}\n\n[Note: Original diff was {line_count} lines and was summarized.]"
         except Exception as e:
@@ -867,7 +867,7 @@ Diff Snippet:
                 prompt,
                 system_instruction=system_instruction,
                 temperature=0.2,
-                max_tokens=4096,
+                max_tokens=self._get_max_tokens("LLM_BOOTSTRAP_DOCS_MAX_TOKENS", 8192),
                 response_schema=self._schema_bootstrap_docs(),
                 response_schema_name="bootstrap_docs",
             )
@@ -1069,7 +1069,7 @@ Diff Snippet:
         today = datetime.now().strftime("%Y-%m-%d")
         repo_name = config.REPO_NAME
         branch = config.UPSTREAM_BRANCH
-        max_tokens = self._get_max_tokens("LLM_REPO_MAP_MAX_TOKENS", 2048)
+        max_tokens = self._get_max_tokens("LLM_REPO_MAP_MAX_TOKENS", 8192)
 
         system_instruction = "你是一个只输出 JSON 的文档助手。禁止编造，不得输出非 JSON 内容。"
         prompt = f"""
@@ -1170,7 +1170,7 @@ Diff Snippet:
         files_block: str,
     ) -> Optional[Dict[str, Any]]:
         """Stage 2: analyze one directory chunk (fixed schema)."""
-        max_tokens = self._get_max_tokens("LLM_DIR_ANALYSIS_MAX_TOKENS", 2048)
+        max_tokens = self._get_max_tokens("LLM_DIR_ANALYSIS_MAX_TOKENS", 8192)
         repo_map_text = json.dumps(repo_map or {}, ensure_ascii=False)
 
         def extract_files_from_block(block: str) -> List[str]:
@@ -1322,7 +1322,7 @@ Diff Snippet:
         max_pages: int,
     ) -> List[Dict[str, Any]]:
         """Stage 3a: generate a doc plan from directory briefs."""
-        max_tokens = self._get_max_tokens("LLM_DOC_PLAN_MAX_TOKENS", 2048)
+        max_tokens = self._get_max_tokens("LLM_DOC_PLAN_MAX_TOKENS", 8192)
         repo_map_text = json.dumps(repo_map or {}, ensure_ascii=False)
         dir_briefs_text = json.dumps(dir_briefs or [], ensure_ascii=False)
 
@@ -1453,7 +1453,7 @@ Diff Snippet:
         spec: Dict[str, Any],
     ) -> Optional[Dict[str, Any]]:
         """Stage 3b: generate one markdown page from a plan spec."""
-        max_tokens = self._get_max_tokens("LLM_DOC_PAGE_MAX_TOKENS", 4096)
+        max_tokens = self._get_max_tokens("LLM_DOC_PAGE_MAX_TOKENS", 8192)
         today = datetime.now().strftime("%Y-%m-%d")
 
         target_category = self._normalize_category_path(spec.get("target_category") or "")
@@ -1588,7 +1588,7 @@ Diff Snippet:
         file_name: str,
     ) -> Optional[Dict[str, Any]]:
         """Stage 4: generate one plugin API page from a single source module."""
-        max_tokens = self._get_max_tokens("LLM_API_PAGE_MAX_TOKENS", 4096)
+        max_tokens = self._get_max_tokens("LLM_API_PAGE_MAX_TOKENS", 8192)
         today = datetime.now().strftime("%Y-%m-%d")
         repo_map_text = json.dumps(repo_map or {}, ensure_ascii=False)
 
