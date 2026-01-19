@@ -4,4 +4,4 @@
 
 ## 条目
 
-- [消息接收与处理流水线（message_receive）](./message_receive_pipeline.md)
+本目录下的条目由工作流自动生成并出现在侧栏导航中；此页不维护硬编码链接，避免死链。

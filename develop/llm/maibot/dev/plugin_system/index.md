@@ -4,5 +4,4 @@
 
 ## 快速入口
 
-- [插件系统 API（概览）](/develop/llm/maibot/dev/plugin_system/plugin_system_api)
-- [插件系统 API（按模块）](/develop/llm/maibot/dev/plugin_system/api/)
+- [插件系统 API（按模块）](./api/)
