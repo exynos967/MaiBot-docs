@@ -71,6 +71,8 @@ jobs:
           LLM_API_STYLE: ${{ vars.LLM_API_STYLE || 'auto' }}
           SYNC_LOOKBACK_HOURS: ${{ vars.SYNC_LOOKBACK_HOURS || '6' }}
           LLM_MAX_CONTEXT_CHARS: ${{ secrets.LLM_MAX_CONTEXT_CHARS }}
+          LLM_STRUCTURED_OUTPUT: ${{ vars.LLM_STRUCTURED_OUTPUT || '1' }}
+          LLM_MAX_OUTPUT_TOKENS: ${{ vars.LLM_MAX_OUTPUT_TOKENS || '' }}
         run: |
           args=""
           if [ "${{ inputs.bootstrap }}" = "true" ]; then

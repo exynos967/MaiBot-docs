@@ -129,6 +129,7 @@ def generate_text(
     system_instruction: Optional[str] = None,
     temperature: float = 0.7,
     max_tokens: int = 2048,
+    response_format: Optional[Dict[str, Any]] = None,
     api_version: str = "v1beta",
     api_style: str = "auto",
     timeout_seconds: int = 60,
@@ -147,12 +148,70 @@ def generate_text(
             "temperature": float(temperature),
             "max_tokens": int(max_tokens),
         }
-        _, data = _curl_post_json(
-            url=url,
-            headers={"Authorization": f"Bearer {api_key}"},
-            payload=payload,
-            timeout_seconds=timeout_seconds,
-        )
+        if response_format is not None:
+            payload["response_format"] = response_format
+
+        def _looks_like_response_format_error(body_text: str) -> bool:
+            t = (body_text or "").lower()
+            needles = [
+                "response_format",
+                "json_schema",
+                "json_object",
+                "unknown parameter",
+                "unrecognized",
+                "unsupported",
+                "not supported",
+                "invalid",
+            ]
+            return any(n in t for n in needles)
+
+        def _schema_root_type(fmt: Dict[str, Any]) -> str:
+            try:
+                if (fmt or {}).get("type") != "json_schema":
+                    return ""
+                js = (fmt or {}).get("json_schema") or {}
+                schema = js.get("schema") or {}
+                return str(schema.get("type") or "").strip().lower()
+            except Exception:
+                return ""
+
+        def _post(p: Dict[str, Any]) -> Dict[str, Any]:
+            _, data = _curl_post_json(
+                url=url,
+                headers={"Authorization": f"Bearer {api_key}"},
+                payload=p,
+                timeout_seconds=timeout_seconds,
+            )
+            return data or {}
+
+        try:
+            data = _post(payload)
+        except HttpError as e:
+            # Some OpenAI-compatible endpoints (or older models) don't support response_format/json_schema.
+            if response_format is None or e.status_code not in {400, 422} or not _looks_like_response_format_error(e.body):
+                raise
+
+            fallback_payload = dict(payload)
+            fmt = response_format or {}
+            if fmt.get("type") == "json_schema" and _schema_root_type(fmt) == "object":
+                # Try JSON mode as a best-effort fallback for object responses.
+                fallback_payload["response_format"] = {"type": "json_object"}
+            else:
+                # Arrays can't use json_object; fall back to prompt-only JSON.
+                fallback_payload.pop("response_format", None)
+
+            try:
+                data = _post(fallback_payload)
+            except HttpError as e2:
+                if (
+                    "response_format" in (e2.body or "").lower()
+                    and fallback_payload.get("response_format") is not None
+                    and e2.status_code in {400, 422}
+                ):
+                    fallback_payload.pop("response_format", None)
+                    data = _post(fallback_payload)
+                else:
+                    raise
         try:
             return (data["choices"][0]["message"]["content"] or "").strip()
         except Exception:
@@ -188,4 +247,3 @@ def generate_text(
         return "".join((part.get("text") or "") for part in parts).strip()
     except Exception:
         raise RuntimeError(f"Unexpected Gemini response shape: {json.dumps(data, ensure_ascii=False)[:500]}")
-

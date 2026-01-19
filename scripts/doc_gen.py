@@ -7,7 +7,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from config import config
-from llm_client import HttpError, generate_text
+from llm_client import HttpError, detect_api_style, generate_text
 
 
 class DocGenerator:
@@ -36,6 +36,226 @@ class DocGenerator:
         self.default_category = "design_standards"
 
         self._category_segment_re = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_-]*$")
+
+    def _get_max_tokens(self, per_call_env: str, default: int) -> int:
+        """Resolve max_tokens from env, prioritizing a single global knob."""
+        raw_global = (os.getenv("LLM_MAX_OUTPUT_TOKENS") or os.getenv("LLM_MAX_TOKENS") or "").strip()
+        raw_specific = (os.getenv(per_call_env) or "").strip() if per_call_env else ""
+
+        def parse_int(raw: str) -> int:
+            try:
+                return int(raw)
+            except Exception:
+                return 0
+
+        v = parse_int(raw_global) if raw_global else 0
+        if v <= 0:
+            v = parse_int(raw_specific) if raw_specific else 0
+        if v <= 0:
+            v = int(default)
+        return max(1, v)
+
+    def _schema_repo_map(self) -> Dict[str, Any]:
+        return {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "repo": {"type": "string"},
+                "branch": {"type": "string"},
+                "generated_at": {"type": "string"},
+                "summary": {"type": "string"},
+                "module_groups": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": False,
+                        "properties": {
+                            "name": {"type": "string"},
+                            "path_prefixes": {"type": "array", "items": {"type": "string"}},
+                            "responsibility": {"type": "string"},
+                        },
+                        "required": ["name", "path_prefixes", "responsibility"],
+                    },
+                },
+                "public_surfaces": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": False,
+                        "properties": {
+                            "name": {"type": "string"},
+                            "kind": {"type": "string"},
+                            "location": {"type": "string"},
+                            "notes": {"type": "string"},
+                        },
+                        "required": ["name", "kind", "location", "notes"],
+                    },
+                },
+                "doc_group_suggestions": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": False,
+                        "properties": {
+                            "group_path": {"type": "string"},
+                            "rationale": {"type": "string"},
+                            "related_paths": {"type": "array", "items": {"type": "string"}},
+                        },
+                        "required": ["group_path", "rationale", "related_paths"],
+                    },
+                },
+                "limitations": {"type": "string"},
+                "evidence": {"type": "array", "items": {"type": "string"}},
+            },
+            "required": [
+                "repo",
+                "branch",
+                "generated_at",
+                "summary",
+                "module_groups",
+                "public_surfaces",
+                "doc_group_suggestions",
+                "limitations",
+                "evidence",
+            ],
+        }
+
+    def _schema_dir_analysis(self) -> Dict[str, Any]:
+        return {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "dir": {"type": "string"},
+                "chunk_index": {"type": "number"},
+                "chunk_total": {"type": "number"},
+                "files": {"type": "array", "items": {"type": "string"}},
+                "summary": {"type": "string"},
+                "public_contracts": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": False,
+                        "properties": {
+                            "name": {"type": "string"},
+                            "kind": {"type": "string"},
+                            "defined_in": {"type": "string"},
+                            "signature": {"type": "string"},
+                            "notes": {"type": "string"},
+                        },
+                        "required": ["name", "kind", "defined_in", "signature", "notes"],
+                    },
+                },
+                "key_components": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": False,
+                        "properties": {
+                            "name": {"type": "string"},
+                            "defined_in": {"type": "string"},
+                            "responsibility": {"type": "string"},
+                        },
+                        "required": ["name", "defined_in", "responsibility"],
+                    },
+                },
+                "configs": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": False,
+                        "properties": {
+                            "name": {"type": "string"},
+                            "defined_in": {"type": "string"},
+                            "type": {"type": "string"},
+                            "notes": {"type": "string"},
+                        },
+                        "required": ["name", "defined_in", "type", "notes"],
+                    },
+                },
+                "dependencies": {"type": "array", "items": {"type": "string"}},
+                "risks": {"type": "array", "items": {"type": "string"}},
+                "limitations": {"type": "string"},
+                "evidence": {"type": "array", "items": {"type": "string"}},
+            },
+            "required": [
+                "dir",
+                "chunk_index",
+                "chunk_total",
+                "files",
+                "summary",
+                "public_contracts",
+                "key_components",
+                "configs",
+                "dependencies",
+                "risks",
+                "limitations",
+                "evidence",
+            ],
+        }
+
+    def _schema_bootstrap_doc_plan(self) -> Dict[str, Any]:
+        return {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {
+                    "target_category": {"type": "string"},
+                    "file_name": {"type": "string"},
+                    "title": {"type": "string"},
+                    "source_dirs": {"type": "array", "items": {"type": "string"}},
+                    "reason": {"type": "string"},
+                    "evidence": {"type": "array", "items": {"type": "string"}},
+                },
+                "required": ["target_category", "file_name", "title", "source_dirs", "reason", "evidence"],
+            },
+        }
+
+    def _schema_doc_page(self) -> Dict[str, Any]:
+        return {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "target_category": {"type": "string"},
+                "file_name": {"type": "string"},
+                "content": {"type": "string"},
+                "evidence": {"type": "array", "items": {"type": "string"}},
+                "reason": {"type": "string"},
+            },
+            "required": ["target_category", "file_name", "content", "evidence", "reason"],
+        }
+
+    def _schema_doc_update(self) -> Dict[str, Any]:
+        return {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "action": {"type": "string"},
+                "target_category": {"type": "string"},
+                "file_name": {"type": "string"},
+                "content": {"type": "string"},
+                "evidence": {"type": "array", "items": {"type": "string"}},
+                "reason": {"type": "string"},
+            },
+            "required": ["action", "target_category", "file_name", "content", "evidence", "reason"],
+        }
+
+    def _schema_bootstrap_docs(self) -> Dict[str, Any]:
+        return {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {
+                    "target_category": {"type": "string"},
+                    "file_name": {"type": "string"},
+                    "content": {"type": "string"},
+                    "evidence": {"type": "array", "items": {"type": "string"}},
+                    "reason": {"type": "string"},
+                },
+                "required": ["target_category", "file_name", "content", "evidence", "reason"],
+            },
+        }
 
     def _is_safe_category_path(self, category: str) -> bool:
         category = (category or "").strip().strip("/")
@@ -126,6 +346,8 @@ class DocGenerator:
         system_instruction: Optional[str] = None,
         temperature: float = 0.7,
         max_tokens: int = 2048,
+        response_schema: Optional[Dict[str, Any]] = None,
+        response_schema_name: str = "output",
     ) -> str:
         print(f"发起请求: model={self.model_name}")
         if self.show_base_url_in_logs:
@@ -134,6 +356,38 @@ class DocGenerator:
             print("  - Base URL: (hidden)")
         print(f"  - API Style: {self.api_style}")
         print(f"  - Temperature: {temperature}")
+
+        # Global output token cap (optional).
+        raw_cap = os.getenv("LLM_MAX_OUTPUT_TOKENS") or os.getenv("LLM_MAX_TOKENS") or ""
+        try:
+            cap = int(raw_cap) if raw_cap.strip() else 0
+        except Exception:
+            cap = 0
+        if cap > 0:
+            max_tokens = max(1, min(int(max_tokens), cap))
+
+        response_format = None
+        structured_enabled = (os.getenv("LLM_STRUCTURED_OUTPUT") or "1").strip().lower() not in {"0", "false", "no"}
+        if structured_enabled:
+            try:
+                style = detect_api_style(self.base_url, self.api_style)
+            except Exception:
+                style = "auto"
+
+            if style == "openai" and response_schema is not None:
+                schema_name = (response_schema_name or "output").strip()
+                schema_name = re.sub(r"[^a-zA-Z0-9_-]+", "_", schema_name)[:64] or "output"
+                response_format = {
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": schema_name,
+                        "strict": True,
+                        "schema": response_schema,
+                    },
+                }
+            elif style == "openai" and response_schema is None and "json" in (prompt or "").lower():
+                # Best-effort JSON mode when no schema is provided but the prompt expects JSON.
+                response_format = {"type": "json_object"}
 
         max_retries = 3
         for attempt in range(max_retries):
@@ -146,6 +400,7 @@ class DocGenerator:
                     system_instruction=system_instruction,
                     temperature=temperature,
                     max_tokens=max_tokens,
+                    response_format=response_format,
                     api_version=config.GEMINI_API_VERSION,
                     api_style=self.api_style,
                     timeout_seconds=600,
@@ -427,9 +682,14 @@ Diff Snippet:
 2. 如果只是内部重构、WebUI/前端细节、日志/注释、CI 配置、测试用例、纯格式调整，通常不需要更新文档。
 
 请仅回答 "YES" 或 "NO"（可以在 YES 后面附带 1 句极短理由/证据）。
-"""
+        """
         try:
-            result = self._call_llm(prompt, system_instruction=system_instruction, temperature=0, max_tokens=10).strip().upper()
+            result = self._call_llm(
+                prompt,
+                system_instruction=system_instruction,
+                temperature=0,
+                max_tokens=min(64, self._get_max_tokens("", 10)),
+            ).strip().upper()
             return "YES" in result
         except Exception as e:
             self._handle_exception(e, "AI filtering")
@@ -443,19 +703,24 @@ Diff Snippet:
         print(f"检测到变更量较大 ({line_count} 行)。正在生成技术摘要以供 AI 分析...")
         system_instruction = "你是一个专业的技术摘要生成器，擅长将冗长的代码 Diff 转换为紧凑的技术摘要。"
         summary_prompt = f"""
-你是一个资深系统架构师。以下是一个巨大的代码变更 Diff。
-由于 Diff 过长，请你将其压缩为一个**高密度的技术摘要**。
+	你是一个资深系统架构师。以下是一个巨大的代码变更 Diff。
+	由于 Diff 过长，请你将其压缩为一个**高密度的技术摘要**。
 
 要求：
 1. 必须保留所有新增/修改的类名、接口定义、重要方法签名、新增配置项。
 2. 清晰描述数据流或调用链路的变化。
 3. 剔除样板代码、简单导入变化、纯格式调整。
 
---- Diff ---
-{diff[:30000]}
-"""
+	--- Diff ---
+	{diff[:30000]}
+	"""
         try:
-            summary = self._call_llm(summary_prompt, system_instruction=system_instruction, temperature=0.2)
+            summary = self._call_llm(
+                summary_prompt,
+                system_instruction=system_instruction,
+                temperature=0.2,
+                max_tokens=self._get_max_tokens("LLM_DIFF_SUMMARY_MAX_TOKENS", 2048),
+            )
             return f"[Large Diff Summary]\n{summary}\n\n[Note: Original diff was {line_count} lines and was summarized.]"
         except Exception as e:
             self._handle_exception(e, "summarizing diff")
@@ -598,7 +863,14 @@ Diff Snippet:
 
         created: List[Dict] = []
         try:
-            raw_response = self._call_llm(prompt, system_instruction=system_instruction, temperature=0.2, max_tokens=4096)
+            raw_response = self._call_llm(
+                prompt,
+                system_instruction=system_instruction,
+                temperature=0.2,
+                max_tokens=4096,
+                response_schema=self._schema_bootstrap_docs(),
+                response_schema_name="bootstrap_docs",
+            )
             result = self._extract_json(raw_response)
             items = result if isinstance(result, list) else [result]
 
@@ -688,7 +960,13 @@ Diff Snippet:
   \"content\": \"---\\ntitle: ...\\n...\\n---\\n\\n## 概述\\n...\\n## 关键实现\\n...\\n## 变更影响分析\\n...\",\n  \"evidence\": [\"path/to/file.py\", \"ClassName.method\"],\n  \"reason\": \"\"\n}}
 """
         try:
-            raw_response = self._call_llm(prompt, system_instruction=system_instruction, temperature=0.2)
+            raw_response = self._call_llm(
+                prompt,
+                system_instruction=system_instruction,
+                temperature=0.2,
+                response_schema=self._schema_doc_update(),
+                response_schema_name="doc_update",
+            )
             result = self._extract_json(raw_response)
             validation_error = self._validate_change(result, processed_diff, commit_message)
             if validation_error:
@@ -791,7 +1069,7 @@ Diff Snippet:
         today = datetime.now().strftime("%Y-%m-%d")
         repo_name = config.REPO_NAME
         branch = config.UPSTREAM_BRANCH
-        max_tokens = int(os.getenv("LLM_REPO_MAP_MAX_TOKENS", "2048") or "2048")
+        max_tokens = self._get_max_tokens("LLM_REPO_MAP_MAX_TOKENS", 2048)
 
         system_instruction = "你是一个只输出 JSON 的文档助手。禁止编造，不得输出非 JSON 内容。"
         prompt = f"""
@@ -815,7 +1093,14 @@ Diff Snippet:
 {repo_context}
 """
         try:
-            raw = self._call_llm(prompt, system_instruction=system_instruction, temperature=0.2, max_tokens=max_tokens)
+            raw = self._call_llm(
+                prompt,
+                system_instruction=system_instruction,
+                temperature=0.2,
+                max_tokens=max_tokens,
+                response_schema=self._schema_repo_map(),
+                response_schema_name="repo_map",
+            )
             obj = self._extract_json(raw)
             if not isinstance(obj, dict):
                 raise ValueError("repo_map must be a JSON object")
@@ -885,7 +1170,7 @@ Diff Snippet:
         files_block: str,
     ) -> Optional[Dict[str, Any]]:
         """Stage 2: analyze one directory chunk (fixed schema)."""
-        max_tokens = int(os.getenv("LLM_DIR_ANALYSIS_MAX_TOKENS", "2048") or "2048")
+        max_tokens = self._get_max_tokens("LLM_DIR_ANALYSIS_MAX_TOKENS", 2048)
         repo_map_text = json.dumps(repo_map or {}, ensure_ascii=False)
 
         def extract_files_from_block(block: str) -> List[str]:
@@ -901,14 +1186,17 @@ Diff Snippet:
         prompt = f"""
 	你是一个资深软件工程师。请基于以下上下文，对目录 `{dir_path}` 的这一个“分片”做结构化分析。
 
-重要规则：
-- 禁止编造：只能引用 files_block 中出现的内容（路径/符号/字面量）。
-- 每个结论必须可追溯：evidence 至少 2 条，且必须是 files_block 中出现的原样子串（建议用文件路径/类名/函数名）。
+	重要规则：
+	- 禁止编造：只能引用 files_block 中出现的内容（路径/符号/字面量）。
+	- 每个结论必须可追溯：evidence 至少 2 条，且必须是 files_block 中出现的原样子串（建议用文件路径/类名/函数名）。
+	- 严格输出纯 JSON：不要使用 ```json 代码块，不要输出任何解释文字。
+	- 控制输出体积：不要枚举大量文件/符号。除 `files` 外，所有数组最多保留 5 个元素。
+	- `files` 字段固定输出为空数组 `[]`（脚本会从 files_block 自动填充真实文件列表，避免输出过长导致截断）。
 
-输出必须是 JSON 对象，且 key 必须严格等于下面列表（不得多、不得少）：
-- dir: string
-- chunk_index: number
-- chunk_total: number
+	输出必须是 JSON 对象，且 key 必须严格等于下面列表（不得多、不得少）：
+	- dir: string
+	- chunk_index: number
+	- chunk_total: number
 - files: array[string]
 - summary: string
 - public_contracts: array[{{name, kind, defined_in, signature, notes}}]
@@ -926,7 +1214,14 @@ Diff Snippet:
 {files_block}
         """
         try:
-            raw = self._call_llm(prompt, system_instruction=system_instruction, temperature=0.2, max_tokens=max_tokens)
+            raw = self._call_llm(
+                prompt,
+                system_instruction=system_instruction,
+                temperature=0.2,
+                max_tokens=max_tokens,
+                response_schema=self._schema_dir_analysis(),
+                response_schema_name="dir_analysis",
+            )
             obj = self._extract_json(raw)
             if not isinstance(obj, dict):
                 raise ValueError("directory analysis must be a JSON object")
@@ -1005,6 +1300,9 @@ Diff Snippet:
             if len(normalized_evidence) < 2:
                 # Auto-fill evidence with file paths from the provided context to avoid dropping the analysis.
                 fallback = extract_files_from_block(files_block)[:5]
+                header_token = f"Directory: {dir_path}"
+                if header_token in (files_block or ""):
+                    fallback.append(header_token)
                 normalized_evidence = fallback[:2] if len(fallback) >= 2 else fallback
             if len(normalized_evidence) < 2:
                 raise ValueError("analysis.evidence must include >= 2 substrings present in files_block")
@@ -1024,7 +1322,7 @@ Diff Snippet:
         max_pages: int,
     ) -> List[Dict[str, Any]]:
         """Stage 3a: generate a doc plan from directory briefs."""
-        max_tokens = int(os.getenv("LLM_DOC_PLAN_MAX_TOKENS", "2048") or "2048")
+        max_tokens = self._get_max_tokens("LLM_DOC_PLAN_MAX_TOKENS", 2048)
         repo_map_text = json.dumps(repo_map or {}, ensure_ascii=False)
         dir_briefs_text = json.dumps(dir_briefs or [], ensure_ascii=False)
 
@@ -1052,7 +1350,14 @@ Diff Snippet:
 {dir_briefs_text}
 """
         try:
-            raw = self._call_llm(prompt, system_instruction=system_instruction, temperature=0.2, max_tokens=max_tokens)
+            raw = self._call_llm(
+                prompt,
+                system_instruction=system_instruction,
+                temperature=0.2,
+                max_tokens=max_tokens,
+                response_schema=self._schema_bootstrap_doc_plan(),
+                response_schema_name="doc_plan",
+            )
             data = self._extract_json(raw)
             items = data if isinstance(data, list) else [data]
             plan: List[Dict[str, Any]] = []
@@ -1148,7 +1453,7 @@ Diff Snippet:
         spec: Dict[str, Any],
     ) -> Optional[Dict[str, Any]]:
         """Stage 3b: generate one markdown page from a plan spec."""
-        max_tokens = int(os.getenv("LLM_DOC_PAGE_MAX_TOKENS", "4096") or "4096")
+        max_tokens = self._get_max_tokens("LLM_DOC_PAGE_MAX_TOKENS", 4096)
         today = datetime.now().strftime("%Y-%m-%d")
 
         target_category = self._normalize_category_path(spec.get("target_category") or "")
@@ -1194,7 +1499,14 @@ Diff Snippet:
 {selected_text}
 """
         try:
-            raw = self._call_llm(prompt, system_instruction=system_instruction, temperature=0.2, max_tokens=max_tokens)
+            raw = self._call_llm(
+                prompt,
+                system_instruction=system_instruction,
+                temperature=0.2,
+                max_tokens=max_tokens,
+                response_schema=self._schema_doc_page(),
+                response_schema_name="doc_page",
+            )
             obj = self._extract_json(raw)
             if not isinstance(obj, dict):
                 raise ValueError("doc page must be a JSON object")
@@ -1276,7 +1588,7 @@ Diff Snippet:
         file_name: str,
     ) -> Optional[Dict[str, Any]]:
         """Stage 4: generate one plugin API page from a single source module."""
-        max_tokens = int(os.getenv("LLM_API_PAGE_MAX_TOKENS", "4096") or "4096")
+        max_tokens = self._get_max_tokens("LLM_API_PAGE_MAX_TOKENS", 4096)
         today = datetime.now().strftime("%Y-%m-%d")
         repo_map_text = json.dumps(repo_map or {}, ensure_ascii=False)
 
@@ -1310,7 +1622,14 @@ Diff Snippet:
 ```
 """
         try:
-            raw = self._call_llm(prompt, system_instruction=system_instruction, temperature=0.2, max_tokens=max_tokens)
+            raw = self._call_llm(
+                prompt,
+                system_instruction=system_instruction,
+                temperature=0.2,
+                max_tokens=max_tokens,
+                response_schema=self._schema_doc_page(),
+                response_schema_name="api_page",
+            )
             obj = self._extract_json(raw)
             if not isinstance(obj, dict):
                 raise ValueError("api page must be a JSON object")

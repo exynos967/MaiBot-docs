@@ -40,10 +40,30 @@ pnpm docs:preview
 
 LLM 配置通过 GitHub Secrets/Vars 提供（不会写入仓库）：
 
-- `GEMINI_API_KEY`（或 `OPENAI_API_KEY`）
-- `BASE_URL`（或 `OPENAI_API_BASE`）
-- `MODEL_NAME`
-- 可选：`LLM_API_STYLE`、`GEMINI_API_VERSION`、`SYNC_LOOKBACK_HOURS`
+### Secrets（敏感/凭据）
+
+在仓库 `Settings → Secrets and variables → Actions → Secrets` 配置：
+
+- `OPENAI_API_KEY`（可选：使用 OpenAI/兼容接口时）
+- `GEMINI_API_KEY`（可选：使用 Gemini 接口时；脚本会优先取 `GEMINI_API_KEY`，否则回退到 `OPENAI_API_KEY`）
+- `OPENAI_API_BASE`（可选：OpenAI/兼容接口 Base URL）
+- `BASE_URL`（可选：Gemini 或其他 Base URL；脚本会优先取 `BASE_URL`，否则回退到 `OPENAI_API_BASE`）
+- `MODEL_NAME`（必填：模型名，例如 `gpt-4o-mini` / `gemini-1.5-flash`）
+- `LLM_MAX_CONTEXT_CHARS`（可选：bootstrap 扫描阶段的上下文预算；不填默认 `120000`）
+
+> 注：`GITHUB_TOKEN` 为 GitHub Actions 自带，不需要手动创建 Secret。
+
+### Vars（非敏感配置）
+
+在仓库 `Settings → Secrets and variables → Actions → Variables` 配置：
+
+- `GEMINI_API_VERSION`（可选，默认 `v1beta`）
+- `LLM_API_STYLE`（可选，默认 `auto`；可设为 `openai`/`gemini` 强制风格）
+- `SYNC_LOOKBACK_HOURS`（可选，默认 `6`）
+- `LLM_STRUCTURED_OUTPUT`（可选，默认 `1`；OpenAI 风格接口启用 `response_format: json_schema`，不支持会自动降级）
+- `LLM_MAX_OUTPUT_TOKENS`（可选，默认空；**单一控制旋钮**：统一决定各阶段的 `max_tokens`。不填则各阶段使用内置默认值）
+
+> 你也可以把 `LLM_STRUCTURED_OUTPUT` / `LLM_MAX_OUTPUT_TOKENS` 放在 Secrets 里，但需要同步把 3 个 workflow 的读取从 `vars.*` 改为 `secrets.*`。
 
 首次建档（可选）：
 
