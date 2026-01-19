@@ -12,13 +12,18 @@ related_base:
 ## 目录/结构
 位于 `src/bw_learner/` 目录：
 - `expression_learner.py`: 核心学习逻辑，负责提取表达方式。
-- `jargon_miner.py` & `jargon_explainer.py`: 黑话挖掘与解释工具。
+- `expression_selector.py` / `expression_reflector.py`: 选择与反思/评估学习到的表达（细节以源码为准）。
+- `expression_auto_check_task.py`: 表达方式的自动检查任务（用于后台周期性校验/修正）。
+- `jargon_miner.py` / `jargon_explainer.py`: 黑话挖掘与解释工具。
+- `learner_utils.py`: 学习过程中的通用工具方法。
 - `message_recorder.py`: 记录原始消息用于后续分析。
 - `reflect_tracker.py`: 跟踪学习效果与反思过程。
 
 ## 适用范围与边界
 - **适用范围**: 提升机器人在特定社群中的融入感，实现个性化语料积累。
-- **边界**: 该系统依赖于大量的历史聊天数据。具体的学习算法（如是否涉及本地微调或仅为 Prompt 增强）需要以源码验证。
+- **边界**:
+  - 该系统依赖于历史聊天数据与消息入库质量（上游消息流与存储策略会影响学习效果）。
+  - 学习算法是否涉及本地微调/向量检索/纯 prompt 增强等，需要以源码与配置验证。
 
 ## 变更影响分析
 该模块的变更会影响机器人语料库的积累质量。如果学习逻辑出现偏差，可能会导致机器人模仿不当言论或产生语序混乱。

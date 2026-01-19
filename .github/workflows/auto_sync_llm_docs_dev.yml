@@ -70,6 +70,7 @@ jobs:
           GEMINI_API_VERSION: ${{ vars.GEMINI_API_VERSION || 'v1beta' }}
           LLM_API_STYLE: ${{ vars.LLM_API_STYLE || 'auto' }}
           SYNC_LOOKBACK_HOURS: ${{ vars.SYNC_LOOKBACK_HOURS || '6' }}
+          LLM_MAX_CONTEXT_CHARS: ${{ secrets.LLM_MAX_CONTEXT_CHARS }}
         run: |
           args=""
           if [ "${{ inputs.bootstrap }}" = "true" ]; then

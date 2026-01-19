@@ -28,10 +28,39 @@ class DocGenerator:
             "messages",
             "platform_adapters",
             "plugin_system",
+            "plugin_system/api",
             "learning_system",
             "storage_utils",
         ]
         self.default_category = "design_standards"
+
+        self._category_segment_re = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_-]*$")
+
+    def _is_safe_category_path(self, category: str) -> bool:
+        category = (category or "").strip().strip("/")
+        if not category:
+            return False
+        if category.startswith(("/", "\\")):
+            return False
+        if "\\" in category or ":" in category:
+            return False
+        parts = [p for p in category.split("/") if p]
+        if not parts:
+            return False
+        for part in parts:
+            if part in {".", ".."}:
+                return False
+            if part.startswith("."):
+                return False
+            if part == "snapshots":
+                return False
+            if not self._category_segment_re.match(part):
+                return False
+        return True
+
+    def _normalize_category_path(self, category: str) -> str:
+        category = (category or "").strip().replace("\\", "/").strip("/")
+        return category
 
     def _get_base_context(self) -> str:
         """递归读取 docs_root 下的 md 文件作为上下文（排除 snapshots/，并做长度限制）。"""
@@ -291,10 +320,12 @@ Diff Snippet:
         if any(x in file_name for x in ["/", "\\", ".."]):
             return "file_name must be a plain filename (no path)"
 
-        target_category = (change.get("target_category") or "").strip()
+        target_category = self._normalize_category_path(change.get("target_category") or "")
         if action == "create":
-            if target_category not in self.categories:
-                return f"target_category must be one of: {', '.join(self.categories)}"
+            if not target_category:
+                return "target_category is required"
+            if not self._is_safe_category_path(target_category):
+                return "target_category must be a safe relative path under docs root (e.g. plugin_system/api)"
 
         content = change.get("content")
         if not isinstance(content, str) or not content.strip():
@@ -328,11 +359,11 @@ Diff Snippet:
         if any(x in file_name for x in ["/", "\\", ".."]):
             return "file_name must be a plain filename (no path)"
 
-        target_category = (item.get("target_category") or "").strip()
+        target_category = self._normalize_category_path(item.get("target_category") or "")
         if not target_category:
             return "target_category is required"
-        if target_category not in self.categories:
-            return f"target_category must be one of: {', '.join(self.categories)}"
+        if not self._is_safe_category_path(target_category):
+            return "target_category must be a safe relative path under docs root (e.g. plugin_system/api)"
 
         content = item.get("content")
         if not isinstance(content, str) or not content.strip():
@@ -376,6 +407,7 @@ Diff Snippet:
 注意：你只能基于下面提供的“仓库信息”与“现有文档”，输出**概括性、可验证**的文档。若缺少细节，请明确写“需要以源码验证/需要补充信息”，不要猜测接口。
 
 --- 可用分类 ---
+推荐分类（可直接使用，也可在 docs_root 下创建新的子目录作为分类）：
 {categories_str}
 
 --- 仓库信息（快照） ---
@@ -386,7 +418,8 @@ Diff Snippet:
 
 --- 输出要求 ---
 1) 只输出一个 JSON 数组（最多 12 项），每一项是一个对象，仅包含这些 key：
-   - target_category: 必须为可用分类之一
+   - target_category: 文档落盘目录（相对 docs_root）。可以使用推荐分类，也可以创建新目录（允许多级，如 plugin_system/api）。
+     路径规则：只能包含字母/数字/下划线/短横线与 `/`，不能以 `.` 开头、不能包含 `..`、不能是 `snapshots`。
    - file_name: 纯文件名，以 .md 结尾，禁止包含路径/..，且不能是 index.md
    - content: Markdown，必须以 YAML frontmatter 开头，且至少包含以下章节：
        - ## 概述
@@ -453,7 +486,7 @@ Diff Snippet:
 你是一个高级软件工程师和技术文档专家。你的任务是维护 `{repo_name}` 的 `{branch}` 分支开发文档（按模块分组，面向 AI/RAG）。
 
 --- 当前分类结构 ---
-所有文档必须归入以下分类之一：
+推荐分类（可直接使用，也可在 docs_root 下创建新的子目录作为分类）：
 {categories_str}
 
 --- 上下文（现有文档） ---
@@ -485,6 +518,10 @@ Diff Snippet:
    - 必须包含一个名为 \"## 变更影响分析\" 的区块，说明边界情况/兼容性/最佳实践。
 4. 输出格式：
    - 只能返回 JSON 对象，且只能包含这些 key：action, target_category, file_name, content, evidence, reason
+
+补充约束：
+- 若 action 为 create，target_category 为文档落盘目录（相对 docs_root），允许多级（如 plugin_system/api）。
+  路径规则：只能包含字母/数字/下划线/短横线与 `/`，不能以 `.` 开头、不能包含 `..`、不能是 `snapshots`。
 
 --- 示例输出结构 ---
 {{
@@ -524,7 +561,7 @@ Diff Snippet:
 
     def _apply_change(self, change: Dict) -> Optional[str]:
         action = (change.get("action") or "").strip().lower()
-        target_category = (change.get("target_category") or self.default_category).strip()
+        target_category = self._normalize_category_path(change.get("target_category") or self.default_category)
         file_name = (change.get("file_name") or "").strip()
         content = change.get("content")
 
@@ -532,17 +569,31 @@ Diff Snippet:
             print("Invalid change format from AI.")
             return None
 
-        if target_category not in self.categories:
-            print(f"Warning: Category {target_category} not defined. Using default.")
+        if not self._is_safe_category_path(target_category):
+            print(f"Warning: Unsafe category path {target_category!r}. Using default.")
             target_category = self.default_category
 
         file_path: Optional[str] = None
         if action == "update":
-            for cat in self.categories:
-                potential_path = os.path.join(self.docs_root, cat, file_name)
-                if os.path.exists(potential_path):
-                    file_path = potential_path
-                    break
+            # Prefer the provided target_category if it already exists.
+            if self._is_safe_category_path(target_category):
+                preferred = os.path.join(self.docs_root, target_category, file_name)
+                if os.path.exists(preferred):
+                    file_path = preferred
+
+            if not file_path:
+                matches: List[str] = []
+                for root, _, files in os.walk(self.docs_root):
+                    if "snapshots" in root.split(os.sep):
+                        continue
+                    if file_name in files:
+                        matches.append(os.path.join(root, file_name))
+                if matches:
+                    matches = sorted(set(matches))
+                    if len(matches) > 1:
+                        print(f"Warning: multiple matches for {file_name}; picking {matches[0]}")
+                    file_path = matches[0]
+
             if not file_path:
                 print(f"警告：请求更新 {file_name} 但未找到。将回退到创建操作。")
                 action = "create"
@@ -556,3 +607,474 @@ Diff Snippet:
 
         print(f"已应用文档{action}：{file_path}")
         return file_path
+
+    def write_markdown(self, *, target_category: str, file_name: str, content: str) -> str:
+        """Write a markdown file under docs_root/target_category."""
+        target_category = self._normalize_category_path(target_category)
+        file_name = (file_name or "").strip()
+        content = content or ""
+
+        if not self._is_safe_category_path(target_category):
+            raise ValueError(f"Unsafe category path: {target_category!r}")
+        if not file_name.endswith(".md"):
+            raise ValueError("file_name must end with .md")
+        if any(x in file_name for x in ["/", "\\", ".."]):
+            raise ValueError("file_name must be a plain filename (no path)")
+        if not content.strip():
+            raise ValueError("content must be non-empty")
+
+        file_path = os.path.join(self.docs_root, target_category, file_name)
+        os.makedirs(os.path.dirname(file_path), exist_ok=True)
+        with open(file_path, "w", encoding="utf-8") as f:
+            f.write(content)
+        return file_path
+
+    def generate_repo_map(self, repo_context: str) -> Dict[str, Any]:
+        """Stage 1: build a repo-level map used by later directory/page generation."""
+        today = datetime.now().strftime("%Y-%m-%d")
+        repo_name = config.REPO_NAME
+        branch = config.UPSTREAM_BRANCH
+        max_tokens = int(os.getenv("LLM_REPO_MAP_MAX_TOKENS", "2048") or "2048")
+
+        system_instruction = "你是一个只输出 JSON 的文档助手。禁止编造，不得输出非 JSON 内容。"
+        prompt = f"""
+你是一个资深软件架构师。请基于提供的“仓库信息（快照）”生成一个可复用的 RepoMap（用于后续逐目录分析与文档生成）。
+
+约束：
+- 禁止编造：只允许引用快照中可直接佐证的内容（路径、顶层签名、片段）。
+- 需要标注不确定性：看不到实现细节时写清楚“需要以源码验证”。
+- 输出必须是 JSON 对象，且必须包含以下 key（不得多、不得少）：
+  - repo: string
+  - branch: string
+  - generated_at: string (YYYY-MM-DD)
+  - summary: string
+  - module_groups: array (each item: {{name, path_prefixes, responsibility}})
+  - public_surfaces: array (each item: {{name, kind, location, notes}})
+  - doc_group_suggestions: array (each item: {{group_path, rationale, related_paths}})
+  - limitations: string
+  - evidence: array (>= 5 items; every item must appear verbatim in the repo snapshot text)
+
+--- 仓库信息（快照） ---
+{repo_context}
+"""
+        try:
+            raw = self._call_llm(prompt, system_instruction=system_instruction, temperature=0.2, max_tokens=max_tokens)
+            obj = self._extract_json(raw)
+            if not isinstance(obj, dict):
+                raise ValueError("repo_map must be a JSON object")
+
+            required_keys = {
+                "repo",
+                "branch",
+                "generated_at",
+                "summary",
+                "module_groups",
+                "public_surfaces",
+                "doc_group_suggestions",
+                "limitations",
+                "evidence",
+            }
+            if set(obj.keys()) != required_keys:
+                raise ValueError(f"repo_map keys mismatch: got={sorted(obj.keys())}")
+
+            obj["repo"] = (obj.get("repo") or repo_name).strip()
+            obj["branch"] = (obj.get("branch") or branch).strip()
+            obj["generated_at"] = (obj.get("generated_at") or today).strip()
+
+            evidence = obj.get("evidence")
+            if not isinstance(evidence, list) or len(evidence) < 5:
+                raise ValueError("repo_map.evidence must be a list with >= 5 items")
+
+            matched = 0
+            for ev in evidence:
+                if isinstance(ev, str) and ev.strip() and ev.strip() in repo_context:
+                    matched += 1
+            if matched < 3:
+                raise ValueError("repo_map.evidence must include at least 3 substrings present in repo_context")
+
+            return obj
+        except Exception as e:
+            self._handle_exception(e, "RepoMap 生成")
+            # Fall back to a minimal map (still valid JSON shape for later steps).
+            return {
+                "repo": repo_name,
+                "branch": branch,
+                "generated_at": today,
+                "summary": "",
+                "module_groups": [],
+                "public_surfaces": [],
+                "doc_group_suggestions": [],
+                "limitations": "RepoMap generation failed; downstream steps will have reduced quality.",
+                "evidence": [],
+            }
+
+    def analyze_directory_chunk(
+        self,
+        *,
+        repo_map: Dict[str, Any],
+        dir_path: str,
+        chunk_index: int,
+        chunk_total: int,
+        files_block: str,
+    ) -> Optional[Dict[str, Any]]:
+        """Stage 2: analyze one directory chunk (fixed schema)."""
+        max_tokens = int(os.getenv("LLM_DIR_ANALYSIS_MAX_TOKENS", "2048") or "2048")
+        repo_map_text = json.dumps(repo_map or {}, ensure_ascii=False)
+
+        system_instruction = "你是一个只输出 JSON 的文档助手。禁止编造，不得输出非 JSON 内容。"
+        prompt = f"""
+你是一个资深软件工程师。请基于以下上下文，对目录 `{dir_path}` 的这一个“分片”做结构化分析。
+
+重要规则：
+- 禁止编造：只能引用 files_block 中出现的内容（路径/符号/字面量）。
+- 每个结论必须可追溯：evidence 至少 2 条，且必须是 files_block 中出现的原样子串（建议用文件路径/类名/函数名）。
+
+输出必须是 JSON 对象，且 key 必须严格等于下面列表（不得多、不得少）：
+- dir: string
+- chunk_index: number
+- chunk_total: number
+- files: array[string]
+- summary: string
+- public_contracts: array[{{name, kind, defined_in, signature, notes}}]
+- key_components: array[{{name, defined_in, responsibility}}]
+- configs: array[{{name, defined_in, type, notes}}]
+- dependencies: array[string]
+- risks: array[string]
+- limitations: string
+- evidence: array[string]
+
+--- RepoMap ---
+{repo_map_text}
+
+--- files_block ---
+{files_block}
+"""
+        try:
+            raw = self._call_llm(prompt, system_instruction=system_instruction, temperature=0.2, max_tokens=max_tokens)
+            obj = self._extract_json(raw)
+            if not isinstance(obj, dict):
+                raise ValueError("directory analysis must be a JSON object")
+
+            required_keys = {
+                "dir",
+                "chunk_index",
+                "chunk_total",
+                "files",
+                "summary",
+                "public_contracts",
+                "key_components",
+                "configs",
+                "dependencies",
+                "risks",
+                "limitations",
+                "evidence",
+            }
+            if set(obj.keys()) != required_keys:
+                raise ValueError(f"analysis keys mismatch: got={sorted(obj.keys())}")
+
+            if (obj.get("dir") or "").strip() != dir_path:
+                raise ValueError("analysis.dir mismatch")
+            if int(obj.get("chunk_index") or 0) != int(chunk_index):
+                raise ValueError("analysis.chunk_index mismatch")
+            if int(obj.get("chunk_total") or 0) != int(chunk_total):
+                raise ValueError("analysis.chunk_total mismatch")
+
+            files = obj.get("files")
+            if not isinstance(files, list) or not all(isinstance(x, str) and x.strip() for x in files):
+                raise ValueError("analysis.files must be a list of strings")
+
+            evidence = obj.get("evidence")
+            if not isinstance(evidence, list) or len(evidence) < 2:
+                raise ValueError("analysis.evidence must be a list with >= 2 items")
+
+            matched = 0
+            for ev in evidence:
+                if isinstance(ev, str) and ev.strip() and ev.strip() in files_block:
+                    matched += 1
+            if matched < 2:
+                raise ValueError("analysis.evidence items must appear verbatim in files_block")
+
+            return obj
+        except Exception as e:
+            self._handle_exception(e, f"目录分析({dir_path}#{chunk_index}/{chunk_total})")
+            return None
+
+    def generate_bootstrap_doc_plan(
+        self,
+        *,
+        repo_map: Dict[str, Any],
+        dir_briefs: List[Dict[str, Any]],
+        max_pages: int,
+    ) -> List[Dict[str, Any]]:
+        """Stage 3a: generate a doc plan from directory briefs."""
+        max_tokens = int(os.getenv("LLM_DOC_PLAN_MAX_TOKENS", "2048") or "2048")
+        repo_map_text = json.dumps(repo_map or {}, ensure_ascii=False)
+        dir_briefs_text = json.dumps(dir_briefs or [], ensure_ascii=False)
+
+        system_instruction = "你是一个只输出 JSON 的文档助手。禁止编造，不得输出非 JSON 内容。"
+        prompt = f"""
+你是一个技术文档信息架构师。请基于 RepoMap 与逐目录摘要，为 `{config.REPO_NAME}`@`{config.UPSTREAM_BRANCH}` 生成“初始文档规划”（模块化分组，多入口）。
+
+要求：
+- 允许新增/重排分组目录：target_category 是 docs_root 下的相对路径，可多级（如 plugin_system/api）。
+- 每一篇文档必须能追溯来源：evidence 至少 2 条，必须出现在 dir_briefs 或 repo_map 中的原样子串（建议用路径/符号名）。
+- 文档数量上限：最多 {int(max_pages)} 篇（超过则优先保留“对外契约/API/插件开发”相关文档）。
+
+输出必须是 JSON 数组，每一项仅包含这些 key（不得多、不得少）：
+- target_category: string
+- file_name: string (.md, 纯文件名，无路径)
+- title: string
+- source_dirs: array[string] (从 dir_briefs 中选择)
+- reason: string
+- evidence: array[string]
+
+--- RepoMap ---
+{repo_map_text}
+
+--- dir_briefs ---
+{dir_briefs_text}
+"""
+        try:
+            raw = self._call_llm(prompt, system_instruction=system_instruction, temperature=0.2, max_tokens=max_tokens)
+            data = self._extract_json(raw)
+            items = data if isinstance(data, list) else [data]
+            plan: List[Dict[str, Any]] = []
+            dir_set = {str(d.get("dir")).strip() for d in (dir_briefs or []) if isinstance(d, dict) and d.get("dir")}
+            haystack = f"{repo_map_text}\n{dir_briefs_text}"
+
+            for item in items:
+                if not isinstance(item, dict):
+                    continue
+                if set(item.keys()) != {"target_category", "file_name", "title", "source_dirs", "reason", "evidence"}:
+                    continue
+
+                target_category = self._normalize_category_path(item.get("target_category") or "")
+                file_name = (item.get("file_name") or "").strip()
+                if not self._is_safe_category_path(target_category):
+                    continue
+                if not file_name.endswith(".md") or any(x in file_name for x in ["/", "\\", ".."]):
+                    continue
+
+                source_dirs = item.get("source_dirs")
+                if not isinstance(source_dirs, list) or not source_dirs:
+                    continue
+                if not all(isinstance(d, str) and d.strip() for d in source_dirs):
+                    continue
+                if any(d.strip() not in dir_set for d in source_dirs):
+                    continue
+
+                evidence = item.get("evidence")
+                if not isinstance(evidence, list) or len(evidence) < 2:
+                    continue
+                matched = 0
+                for ev in evidence:
+                    if isinstance(ev, str) and ev.strip() and ev.strip() in haystack:
+                        matched += 1
+                if matched < 2:
+                    continue
+
+                plan.append(
+                    {
+                        "target_category": target_category,
+                        "file_name": file_name,
+                        "title": (item.get("title") or "").strip(),
+                        "source_dirs": [d.strip() for d in source_dirs],
+                        "reason": (item.get("reason") or "").strip(),
+                        "evidence": evidence,
+                    }
+                )
+
+                if len(plan) >= int(max_pages):
+                    break
+
+            return plan
+        except Exception as e:
+            self._handle_exception(e, "文档规划生成")
+            return []
+
+    def generate_bootstrap_doc_page(
+        self,
+        *,
+        repo_map: Dict[str, Any],
+        dir_summaries: List[Dict[str, Any]],
+        spec: Dict[str, Any],
+    ) -> Optional[Dict[str, Any]]:
+        """Stage 3b: generate one markdown page from a plan spec."""
+        max_tokens = int(os.getenv("LLM_DOC_PAGE_MAX_TOKENS", "4096") or "4096")
+        today = datetime.now().strftime("%Y-%m-%d")
+
+        target_category = self._normalize_category_path(spec.get("target_category") or "")
+        file_name = (spec.get("file_name") or "").strip()
+        source_dirs = [d.strip() for d in (spec.get("source_dirs") or []) if isinstance(d, str) and d.strip()]
+        if not source_dirs:
+            return None
+
+        repo_map_text = json.dumps(repo_map or {}, ensure_ascii=False)
+
+        selected = [
+            s
+            for s in (dir_summaries or [])
+            if isinstance(s, dict) and str(s.get("dir") or "").strip() in set(source_dirs)
+        ]
+        selected_text = json.dumps(selected, ensure_ascii=False)
+        evidence_haystack = f"{repo_map_text}\n{selected_text}"
+
+        system_instruction = "你是一个只输出 JSON 的文档助手。禁止编造，不得输出非 JSON 内容。"
+        prompt = f"""
+你是一个高级软件工程师和技术文档专家。请根据 RepoMap + 目录分析结果，为当前 spec 生成一篇可发布的 Markdown 文档。
+
+约束：
+- 禁止编造：只能引用下面上下文中出现的路径/符号/字段。
+- 必须包含 YAML frontmatter，且必须包含 last_updated: {today}
+- 必须包含章节：## 概述 / ## 目录/结构 / ## 适用范围 / ## 变更影响分析 / ## 证据
+- “证据”章节中需要列出 evidence（至少 2 条，原样字符串）
+
+输出必须是 JSON 对象，且 key 必须严格等于下面列表（不得多、不得少）：
+- target_category
+- file_name
+- content
+- evidence
+- reason
+
+--- spec ---
+{json.dumps(spec, ensure_ascii=False)}
+
+--- RepoMap ---
+{repo_map_text}
+
+--- Directory analyses (selected) ---
+{selected_text}
+"""
+        try:
+            raw = self._call_llm(prompt, system_instruction=system_instruction, temperature=0.2, max_tokens=max_tokens)
+            obj = self._extract_json(raw)
+            if not isinstance(obj, dict):
+                raise ValueError("doc page must be a JSON object")
+            if set(obj.keys()) != {"target_category", "file_name", "content", "evidence", "reason"}:
+                raise ValueError("doc page keys mismatch")
+
+            out_category = self._normalize_category_path(obj.get("target_category") or target_category)
+            out_file_name = (obj.get("file_name") or file_name).strip()
+            content = obj.get("content") or ""
+            evidence = obj.get("evidence")
+
+            if not self._is_safe_category_path(out_category):
+                raise ValueError("unsafe target_category")
+            if not out_file_name.endswith(".md") or any(x in out_file_name for x in ["/", "\\", ".."]):
+                raise ValueError("invalid file_name")
+            if not isinstance(content, str) or not content.strip():
+                raise ValueError("content must be non-empty")
+            if not content.lstrip().startswith("---"):
+                raise ValueError("content must start with frontmatter")
+            for sec in ("## 概述", "## 目录/结构", "## 适用范围", "## 变更影响分析", "## 证据"):
+                if sec not in content:
+                    raise ValueError(f"missing section: {sec}")
+
+            if not isinstance(evidence, list) or len(evidence) < 2:
+                raise ValueError("evidence must be a list with >= 2 items")
+            matched = 0
+            for ev in evidence:
+                if isinstance(ev, str) and ev.strip() and ev.strip() in evidence_haystack:
+                    matched += 1
+            if matched < 2:
+                raise ValueError("evidence items must appear in provided context")
+
+            return {
+                "target_category": out_category,
+                "file_name": out_file_name,
+                "content": content,
+                "evidence": evidence,
+                "reason": (obj.get("reason") or "").strip(),
+            }
+        except Exception as e:
+            self._handle_exception(e, f"文档生成({target_category}/{file_name})")
+            return None
+
+    def generate_plugin_api_doc_page(
+        self,
+        *,
+        repo_map: Dict[str, Any],
+        module_path: str,
+        module_text: str,
+        target_category: str,
+        file_name: str,
+    ) -> Optional[Dict[str, Any]]:
+        """Stage 4: generate one plugin API page from a single source module."""
+        max_tokens = int(os.getenv("LLM_API_PAGE_MAX_TOKENS", "4096") or "4096")
+        today = datetime.now().strftime("%Y-%m-%d")
+        repo_map_text = json.dumps(repo_map or {}, ensure_ascii=False)
+
+        system_instruction = "你是一个只输出 JSON 的文档助手。禁止编造，不得输出非 JSON 内容。"
+        prompt = f"""
+你是一个插件开发文档维护助手。请基于 RepoMap + 单文件源码，为插件系统 API 生成一篇 Markdown 文档。
+
+约束：
+- 禁止编造：只允许描述源码中可直接佐证的符号、签名与行为。
+- 必须包含 YAML frontmatter，且必须包含 last_updated: {today}
+- 必须包含章节：## 概述 / ## API 列表 / ## 调用约定 / ## 变更影响分析 / ## 证据
+- evidence 至少 2 条，且必须出现在源码片段中（建议用 `{module_path}` 或函数/类名）
+
+输出必须是 JSON 对象，且 key 必须严格等于下面列表（不得多、不得少）：
+- target_category
+- file_name
+- content
+- evidence
+- reason
+
+目标输出路径（固定）：
+- target_category: {target_category}
+- file_name: {file_name}
+
+--- RepoMap ---
+{repo_map_text}
+
+--- Source: {module_path} ---
+```python
+{module_text}
+```
+"""
+        try:
+            raw = self._call_llm(prompt, system_instruction=system_instruction, temperature=0.2, max_tokens=max_tokens)
+            obj = self._extract_json(raw)
+            if not isinstance(obj, dict):
+                raise ValueError("api page must be a JSON object")
+            if set(obj.keys()) != {"target_category", "file_name", "content", "evidence", "reason"}:
+                raise ValueError("api page keys mismatch")
+
+            out_category = self._normalize_category_path(obj.get("target_category") or target_category)
+            out_file_name = (obj.get("file_name") or file_name).strip()
+            content = obj.get("content") or ""
+            evidence = obj.get("evidence") or []
+
+            if out_category != self._normalize_category_path(target_category):
+                raise ValueError("api page target_category mismatch")
+            if out_file_name != file_name:
+                raise ValueError("api page file_name mismatch")
+            if not self._is_safe_category_path(out_category):
+                raise ValueError("unsafe target_category")
+            if not isinstance(content, str) or not content.strip() or not content.lstrip().startswith("---"):
+                raise ValueError("invalid content")
+            for sec in ("## 概述", "## API 列表", "## 调用约定", "## 变更影响分析", "## 证据"):
+                if sec not in content:
+                    raise ValueError(f"missing section: {sec}")
+
+            if not isinstance(evidence, list) or len(evidence) < 2:
+                raise ValueError("evidence must be a list with >= 2 items")
+            haystack = f"{module_path}\n{module_text}"
+            matched = 0
+            for ev in evidence:
+                if isinstance(ev, str) and ev.strip() and ev.strip() in haystack:
+                    matched += 1
+            if matched < 2:
+                raise ValueError("evidence items must appear in source module")
+
+            return {
+                "target_category": out_category,
+                "file_name": out_file_name,
+                "content": content,
+                "evidence": evidence,
+                "reason": (obj.get("reason") or "").strip(),
+            }
+        except Exception as e:
+            self._handle_exception(e, f"API 文档生成({module_path})")
+            return None
