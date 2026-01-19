@@ -1,5 +1,5 @@
 ---
-title: Chat Flow Management: HeartFlow and BrainChat
+title: "Chat Flow Management: HeartFlow and BrainChat"
 last_updated: 2026-01-19
 ---
 

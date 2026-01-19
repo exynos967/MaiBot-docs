@@ -23,17 +23,23 @@ class DocGenerator:
         self.show_base_url_in_logs = config.SHOW_BASE_URL_IN_LOGS
 
         # LLM docs are organized into modular categories (AstrBot-docs-like).
-        self.categories = [
-            "ai_integration",
-            "design_standards",
-            "messages",
-            "platform_adapters",
-            "plugin_system",
-            "plugin_system/api",
-            "learning_system",
-            "storage_utils",
-        ]
-        self.default_category = "design_standards"
+        # For maim_message we do NOT predefine categories; the LLM will decide them during bootstrap.
+        repo_key = f"{(config.REPO_NAME or '').lower()}|{(self.docs_root or '').lower()}"
+        if "maim_message" in repo_key:
+            self.categories: List[str] = []
+            self.default_category = "modules"
+        else:
+            self.categories = [
+                "ai_integration",
+                "design_standards",
+                "messages",
+                "platform_adapters",
+                "plugin_system",
+                "plugin_system/api",
+                "learning_system",
+                "storage_utils",
+            ]
+            self.default_category = "design_standards"
 
         self._category_segment_re = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_-]*$")
 
@@ -69,6 +75,64 @@ class DocGenerator:
         if v > 2:
             v = 2.0
         return v
+
+    def _quote_yaml_string(self, value: str) -> str:
+        v = (value or "").strip()
+        if not v:
+            return '""'
+        if (v.startswith('"') and v.endswith('"')) or (v.startswith("'") and v.endswith("'")):
+            return v
+        if '"' not in v:
+            return f'"{v}"'
+        if "'" not in v:
+            return f"'{v}'"
+        esc = v.replace("\\", "\\\\").replace('"', '\\"')
+        return f'"{esc}"'
+
+    def _sanitize_frontmatter(self, content: str) -> str:
+        """Best-effort sanitize YAML frontmatter to avoid VitePress build failures."""
+        if not isinstance(content, str) or not content.strip():
+            return content
+
+        # Strip BOM if present (some editors / model outputs may include it).
+        if content.startswith("\ufeff"):
+            content = content.lstrip("\ufeff")
+
+        lines = content.splitlines()
+        if not lines or lines[0].strip() != "---":
+            return content
+
+        end = None
+        for i in range(1, len(lines)):
+            if lines[i].strip() == "---":
+                end = i
+                break
+        if end is None:
+            return content
+
+        fm = lines[1:end]
+        changed = False
+        for idx, line in enumerate(fm):
+            m = re.match(r"^(\s*title\s*:\s*)(.+?)\s*$", line)
+            if not m:
+                continue
+            prefix = m.group(1)
+            value = m.group(2).strip()
+            if not value:
+                continue
+            if value.startswith(("'", '"')) and value.endswith(("'", '"')):
+                continue
+            fm[idx] = f"{prefix}{self._quote_yaml_string(value)}"
+            changed = True
+
+        if not changed:
+            return content
+
+        new_lines = [lines[0]] + fm + [lines[end]] + lines[end + 1 :]
+        out = "\n".join(new_lines)
+        if content.endswith("\n"):
+            out += "\n"
+        return out
 
     def _schema_repo_map(self) -> Dict[str, Any]:
         return {
@@ -833,7 +897,7 @@ Diff Snippet:
         """基于仓库结构与 README 的快照生成初始文档（用于首次建档/重建基线）。"""
         base_context = self._get_base_context()
         today = datetime.now().strftime("%Y-%m-%d")
-        categories_str = ", ".join(self.categories)
+        categories_str = ", ".join(self.categories) if self.categories else "（无预设分类：请根据仓库结构自行创建 docs_root 下的分组目录）"
         repo_name = config.REPO_NAME
         branch = config.UPSTREAM_BRANCH
 
@@ -921,7 +985,7 @@ Diff Snippet:
         base_context = self._get_base_context()
         processed_diff = self._preprocess_diff(diff)
         today = datetime.now().strftime("%Y-%m-%d")
-        categories_str = ", ".join(self.categories)
+        categories_str = ", ".join(self.categories) if self.categories else "（无预设分类：请根据仓库结构与现有文档自行决定分组目录）"
         repo_name = config.REPO_NAME
         branch = config.UPSTREAM_BRANCH
 
@@ -1013,7 +1077,7 @@ Diff Snippet:
         action = (change.get("action") or "").strip().lower()
         target_category = self._normalize_category_path(change.get("target_category") or self.default_category)
         file_name = (change.get("file_name") or "").strip()
-        content = change.get("content")
+        content = self._sanitize_frontmatter(change.get("content"))
 
         if not file_name or not isinstance(content, str) or not content.strip():
             print("Invalid change format from AI.")
@@ -1062,7 +1126,7 @@ Diff Snippet:
         """Write a markdown file under docs_root/target_category."""
         target_category = self._normalize_category_path(target_category)
         file_name = (file_name or "").strip()
-        content = content or ""
+        content = self._sanitize_frontmatter(content or "")
 
         if not self._is_safe_category_path(target_category):
             raise ValueError(f"Unsafe category path: {target_category!r}")
