@@ -23,10 +23,11 @@ class DocGenerator:
         self.show_base_url_in_logs = config.SHOW_BASE_URL_IN_LOGS
 
         # LLM docs are organized into modular categories (AstrBot-docs-like).
-        # For maim_message we do NOT predefine categories; the LLM will decide them during bootstrap.
+        # For MaiBot / maim_message we do NOT predefine categories; the LLM will decide them during bootstrap/update.
         repo_key = f"{(config.REPO_NAME or '').lower()}|{(self.docs_root or '').lower()}"
-        if "maim_message" in repo_key:
+        if "maibot" in repo_key or "maim_message" in repo_key:
             self.categories: List[str] = []
+            # Fallback target when the model outputs an invalid/empty category.
             self.default_category = "modules"
         else:
             self.categories = [
