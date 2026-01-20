@@ -1,7 +1,7 @@
---- 
-title: Meme and Emoji Management 
+---
+title: "Meme and Emoji Management"
 last_updated: 2026-01-19 
---- 
+---
 
 ## 概述 
 Meme and Emoji Management 系统是 MaiBot 的核心模块之一，负责对表情包（Meme-style emojis）进行智能化管理。该系统集成了视觉语言模型（VLM）进行内容分析，并结合大语言模型（LLM）实现情感标签生成与检索。 

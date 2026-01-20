@@ -1,5 +1,5 @@
 ---
-title: Long-term Personal Memory (LPMM)
+title: "Long-term Personal Memory (LPMM)"
 last_updated: 2026-01-19
 ---
 

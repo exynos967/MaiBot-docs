@@ -1,7 +1,7 @@
---- 
+---
  title: "WebSocket Server Management"
  last_updated: 2026-01-19 
- --- 
+---
 
  ## 概述 
  src/maim_message/server 模块被定义为构建 WebSocket 服务器的高级入口点。该模块聚合了核心服务器组件、API-Server 版本的消息数据结构以及配置实用程序，为开发者提供了一个统一的初始化接口。 

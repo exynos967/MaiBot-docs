@@ -1,5 +1,5 @@
 ---
-title: 插件清单 (Manifest) 规范
+title: "插件清单 (Manifest) 规范"
 last_updated: 2026-01-19
 ---
 

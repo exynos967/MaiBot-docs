@@ -1,7 +1,7 @@
---- 
+---
 title: "Multi-Connection Client Routing"
 last_updated: 2026-01-19 
---- 
+---
 
 ## 概述 
 本文档旨在阐述 Maim Message 库中多连接客户端路由的实现机制。该机制主要依赖于 WebSocketMultiClient 与 ClientNetworkDriver，能够在单一驱动层下高效管理多个并发连接并实现消息路由。 

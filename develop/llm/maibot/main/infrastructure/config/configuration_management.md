@@ -1,7 +1,7 @@
---- 
-title: 配置管理系统 
+---
+title: "配置管理系统"
 last_updated: 2026-01-19 
---- 
+---
 
 ## 概述 
 MaiBot 配置系统主要位于 src/config 目录，基于 Python dataclasses 和 tomlkit 构建，旨在提供类型安全、版本化且经过验证的配置体系。该系统支持核心 Bot 设置、AI 提供商适配以及对话限制规则。 

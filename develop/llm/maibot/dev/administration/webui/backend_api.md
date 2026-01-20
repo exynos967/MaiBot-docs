@@ -1,5 +1,5 @@
 ---
-title: WebUI Backend and Authentication
+title: "WebUI Backend and Authentication"
 last_updated: 2026-01-19
 ---
 

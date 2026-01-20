@@ -1,5 +1,5 @@
 ---
-title: 插件注册 API
+title: "插件注册 API"
 last_updated: 2026-01-19
 ---
 

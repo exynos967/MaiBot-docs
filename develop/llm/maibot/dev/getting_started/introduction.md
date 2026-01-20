@@ -1,5 +1,5 @@
 ---
-title: Introduction to MaiBot
+title: "Introduction to MaiBot"
 last_updated: 2026-01-19
 ---
 

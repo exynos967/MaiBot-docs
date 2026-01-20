@@ -1,5 +1,5 @@
 ---
-title: Plugin Manifest Specification
+title: "Plugin Manifest Specification"
 last_updated: 2026-01-19
 ---
 

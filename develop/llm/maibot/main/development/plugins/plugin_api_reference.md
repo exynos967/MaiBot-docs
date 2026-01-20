@@ -1,5 +1,5 @@
 ---
-title: 插件 API 参考手册
+title: "插件 API 参考手册"
 last_updated: 2026-01-19
 ---
 

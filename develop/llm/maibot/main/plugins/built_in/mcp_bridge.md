@@ -1,5 +1,5 @@
 ---
-title: MCP 协议桥接插件
+title: "MCP 协议桥接插件"
 last_updated: 2026-01-19
 ---
 

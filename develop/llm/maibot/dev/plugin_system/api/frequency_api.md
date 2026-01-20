@@ -1,5 +1,5 @@
 ---
-title: Frequency API
+title: "Frequency API"
 last_updated: 2026-01-19
 ---
 

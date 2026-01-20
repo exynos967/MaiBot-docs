@@ -1,5 +1,5 @@
 ---
-title: Built-in Plugins Reference
+title: "Built-in Plugins Reference"
 last_updated: 2026-01-19
 ---
 

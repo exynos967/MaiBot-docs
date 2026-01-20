@@ -1,5 +1,5 @@
 ---
-title: Core Database Models and Migrations
+title: "Core Database Models and Migrations"
 last_updated: 2026-01-19
 ---
 

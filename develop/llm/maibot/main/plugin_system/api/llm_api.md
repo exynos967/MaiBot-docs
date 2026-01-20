@@ -1,5 +1,5 @@
 ---
-title: LLM API 插件开发文档
+title: "LLM API 插件开发文档"
 last_updated: 2026-01-19
 ---
 

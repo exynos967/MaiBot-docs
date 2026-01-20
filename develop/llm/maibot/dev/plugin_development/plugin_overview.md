@@ -1,5 +1,5 @@
 ---
-title: Plugin System Overview
+title: "Plugin System Overview"
 last_updated: 2026-01-19
 ---
 

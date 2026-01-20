@@ -1,5 +1,5 @@
 ---
-title: LLM Generator API
+title: "LLM Generator API"
 last_updated: 2026-01-19
 ---
 

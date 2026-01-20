@@ -1,5 +1,5 @@
 ---
-title: LPMM 长期个性化记忆模块
+title: "LPMM 长期个性化记忆模块"
 last_updated: 2026-01-19
 ---
 

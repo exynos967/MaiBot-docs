@@ -94,9 +94,17 @@ class DocGenerator:
         if not isinstance(content, str) or not content.strip():
             return content
 
+        # Fix common LLM JSON double-escape where the entire markdown is a single line
+        # containing literal "\n" sequences instead of real newlines.
+        if "\n" not in content and ("\\n" in content or "\\r\\n" in content):
+            content = content.replace("\\r\\n", "\n").replace("\\n", "\n").replace("\\t", "\t")
+
         # Strip BOM if present (some editors / model outputs may include it).
         if content.startswith("\ufeff"):
             content = content.lstrip("\ufeff")
+
+        # Normalize newlines.
+        content = content.replace("\r\n", "\n").replace("\r", "\n")
 
         lines = content.splitlines()
         if not lines or lines[0].strip() != "---":
@@ -109,6 +117,10 @@ class DocGenerator:
                 break
         if end is None:
             return content
+
+        # Normalize frontmatter delimiters to be exactly '---' at column 0
+        lines[0] = "---"
+        lines[end] = "---"
 
         fm = lines[1:end]
         changed = False
@@ -125,12 +137,11 @@ class DocGenerator:
             fm[idx] = f"{prefix}{self._quote_yaml_string(value)}"
             changed = True
 
-        if not changed:
-            return content
+        if changed:
+            lines[1:end] = fm
 
-        new_lines = [lines[0]] + fm + [lines[end]] + lines[end + 1 :]
-        out = "\n".join(new_lines)
-        if content.endswith("\n"):
+        out = "\n".join(lines)
+        if content.endswith("\n") and not out.endswith("\n"):
             out += "\n"
         return out
 

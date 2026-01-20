@@ -1,5 +1,5 @@
 ---
-title: Chat API Reference
+title: "Chat API Reference"
 last_updated: 2026-01-19
 ---
 

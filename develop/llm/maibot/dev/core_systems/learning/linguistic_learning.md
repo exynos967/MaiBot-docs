@@ -1,5 +1,5 @@
 ---
-title: Linguistic Learning and Jargon Mining
+title: "Linguistic Learning and Jargon Mining"
 last_updated: 2026-01-19
 ---
 

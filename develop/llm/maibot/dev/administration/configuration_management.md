@@ -1,5 +1,5 @@
 ---
-title: System Configuration and TOML Persistence
+title: "System Configuration and TOML Persistence"
 last_updated: 2026-01-19
 ---
 

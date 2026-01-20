@@ -1,5 +1,5 @@
 ---
-title: Knowledge Graph and RAG Retrieval
+title: "Knowledge Graph and RAG Retrieval"
 last_updated: 2026-01-19
 ---
 

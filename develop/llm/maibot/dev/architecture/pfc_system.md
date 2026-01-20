@@ -1,5 +1,5 @@
 ---
-title: The Prefrontal Cortex (PFC) Architecture
+title: "The Prefrontal Cortex (PFC) Architecture"
 last_updated: 2026-01-19
 ---
 
